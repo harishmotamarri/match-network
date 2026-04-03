@@ -251,6 +251,15 @@ export class BotHandler {
 
         const { experienceLevel, selectedSkills, city, userName } = session.tempData ?? {};
 
+        // Guard against missing/empty selectedSkills (session expired or data lost)
+        if (!selectedSkills || selectedSkills.length === 0) {
+            await sessionManager.patch(session.phoneNumber, {
+                state: 'MAIN_MENU',
+                tempData: {},
+            });
+            return `⚠️ Your session expired and skill selections were lost. Please type *menu* to restart profile setup.`;
+        }
+
         // Save profile fields
         await userService.updateProfile(session.userId!, {
             experienceLevel,
@@ -261,10 +270,19 @@ export class BotHandler {
         // Save availability separately
         await userService.updateAvailability(session.userId!, availability);
 
+        // Re-fetch current skills from DB to get valid IDs (session-cached UUIDs may be stale)
+        const currentSkills = await skillsService.getAllSkills();
+        const skillsByName = new Map<string, { id: string; name: string }>(
+            currentSkills.map((s: any) => [s.name, s])
+        );
+
         // Clear old skills, insert new ones
         await prisma.userSkill.deleteMany({ where: { userId: session.userId! } });
         for (const skill of selectedSkills) {
-            await skillsService.addUserSkill(session.userId!, skill.id, 3);
+            const current = skillsByName.get(skill.name);
+            if (current) {
+                await skillsService.addUserSkill(session.userId!, current.id, 3);
+            }
         }
 
         await sessionManager.patch(session.phoneNumber, {

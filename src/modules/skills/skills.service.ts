@@ -17,18 +17,23 @@ export class SkillsService {
     }
 
     async addUserSkill(userId: string, skillId: string, proficiencyLevel: number) {
-        const skill = await prisma.skill.findUnique({ where: { id: skillId } });
-        if (!skill) throw new Error('Skill not found');
+        try {
+            const userSkill = await prisma.userSkill.upsert({
+                where: { userId_skillId: { userId, skillId } },
+                update: { proficiencyLevel },
+                create: { userId, skillId, proficiencyLevel },
+                include: { skill: true },
+            });
 
-        const userSkill = await prisma.userSkill.upsert({
-            where: { userId_skillId: { userId, skillId } },
-            update: { proficiencyLevel },
-            create: { userId, skillId, proficiencyLevel },
-            include: { skill: true },
-        });
-
-        await redis.del(`profile:${userId}`);
-        return userSkill;
+            await redis.del(`profile:${userId}`);
+            return userSkill;
+        } catch (err: any) {
+            // Prisma P2003 = foreign key constraint failure (skill no longer exists)
+            if (err.code === 'P2003') {
+                throw new Error('Skill no longer exists. Please restart profile setup.');
+            }
+            throw err;
+        }
     }
 
     async removeUserSkill(userId: string, skillId: string) {
