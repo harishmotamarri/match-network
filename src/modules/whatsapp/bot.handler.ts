@@ -174,6 +174,7 @@ export class BotHandler {
                 }
                 return this.goToMenu(session);
         }
+    }
     // ── END UPDATED ───────────────────────────────────────────────────────────
 
     // ── NEW: PROFILE SETUP FLOW ───────────────────────────────────────────────
