@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: match-network
+    runtime: node
+    buildCommand: npm install && npx prisma generate && npm run build && npx prisma migrate deploy
+    startCommand: node dist/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
