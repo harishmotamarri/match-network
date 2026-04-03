@@ -39,23 +39,21 @@ export class BotHandler {
     }
 
     private async route(session: BotSession, msg: string, phone: string): Promise<string> {
-        // Global escape commands — but DON'T interrupt profile setup for new users
-        // ── UPDATED: added profile setup states to escape-block list ─────────
-        const inProfileSetup = [
-            'PROFILE_SETUP_EXPERIENCE',
-            'PROFILE_SETUP_SKILLS',
-            'PROFILE_SETUP_LOCATION',
-            'PROFILE_SETUP_AVAILABILITY',
-        ].includes(session.state);
 
-        if (!inProfileSetup && ['menu', '0', 'home', 'hi', 'hello', 'hey'].includes(msg)) {
+        // ── GLOBAL ESCAPES — work from ANY state ─────────────────────────────────
+        if (['menu', 'home', 'hi', 'hello', 'hey'].includes(msg)) {
             if (session.userId) return this.goToMenu(session);
             return this.handleIdle(session, phone, msg);
         }
-        // ── END UPDATED ───────────────────────────────────────────────────────
+
+        if (msg === 'cancel' || msg === '0') {
+            if (session.userId) return this.goToMenu(session);
+            return this.handleIdle(session, phone, msg);
+        }
 
         if (msg === 'help') return this.helpMessage();
-        // ── ADMIN COMMANDS (only for ADMIN role users) ────────────────────────────
+
+        // ── ADMIN COMMANDS ────────────────────────────────────────────────────────
         if (msg.startsWith('admin') && session.userId) {
             const user = await prisma.user.findUnique({
                 where: { id: session.userId },
@@ -65,7 +63,8 @@ export class BotHandler {
                 return this.handleAdminCommand(session, msg);
             }
         }
-        // ── END ADMIN ─────────────────────────────────────────────────────────────
+
+        // ── STATE MACHINE ─────────────────────────────────────────────────────────
         switch (session.state) {
             case 'IDLE': return this.handleIdle(session, phone, msg);
             case 'AWAITING_NAME': return this.handleName(session, msg);
@@ -76,12 +75,10 @@ export class BotHandler {
             case 'AWAITING_CONNECTION_NOTE': return this.handleConnectionNote(session, msg);
             case 'AWAITING_RESPOND_CHOICE': return this.handleRespondChoice(session, msg);
             case 'AWAITING_AVAILABILITY': return this.handleAvailability(session, msg);
-            // ── NEW ───────────────────────────────────────────────────────────
             case 'PROFILE_SETUP_EXPERIENCE': return this.handleProfileExperience(session, msg);
             case 'PROFILE_SETUP_SKILLS': return this.handleProfileSkills(session, msg);
             case 'PROFILE_SETUP_LOCATION': return this.handleProfileLocation(session, msg);
             case 'PROFILE_SETUP_AVAILABILITY': return this.handleProfileAvailability(session, msg);
-            // ── END NEW ───────────────────────────────────────────────────────
             default: return this.goToMenu(session);
         }
     }
@@ -492,9 +489,10 @@ export class BotHandler {
     private helpMessage(): string {
         return (
             `ℹ️ *Match Network Help*\n\n` +
-            `• Type *menu* anytime to go back\n` +
-            `• Type *0* to cancel current action\n` +
-            `• Type *help* to see this message\n\n` +
+            `• Type *menu* or *hi* — go to main menu\n` +
+            `• Type *0* or *cancel* — exit current flow\n` +
+            `• Type *help* — see this message\n\n` +
+            `_These commands work from anywhere, anytime._\n\n` +
             `${MessageBuilder.mainMenu()}`
         );
     }

@@ -13,9 +13,9 @@ export class MessageBuilder {
             `2️⃣  My connections\n` +
             `3️⃣  Pending requests\n` +
             `4️⃣  Update availability\n` +
-            `5️⃣  Edit my profile\n` +
-            `0️⃣  Help\n\n` +
-            `_Reply with a number_`
+            `5️⃣  Edit my profile\n\n` +
+            `_Reply with a number_\n` +
+            `_Type *help* anytime for assistance_`
         );
     }
 
@@ -41,7 +41,8 @@ export class MessageBuilder {
             `3. 🔧 Mid-level (2–5 years)\n` +
             `4. 🚀 Senior (5–10 years)\n` +
             `5. 🏆 Expert (10+ years)\n\n` +
-            `_Reply with a number_`
+            `_Reply with a number_\n` +
+            `_Type *cancel* to go back to menu_`
         );
     }
 
@@ -66,7 +67,8 @@ export class MessageBuilder {
             `📍 *Where are you based?*\n\n` +
             `Type your city name:\n` +
             `_e.g. Mumbai, Hyderabad, Bangalore_\n\n` +
-            `Or type *skip* to set later.`
+            `Or type *skip* to set later.\n` +
+            `_Type *cancel* to go back to menu_`
         );
     }
 
@@ -76,9 +78,11 @@ export class MessageBuilder {
             `1. 🟢 Available — actively looking to connect\n` +
             `2. 🟡 Busy — open but selective\n` +
             `3. 🔴 Away — not available right now\n\n` +
-            `_Reply with a number_`
+            `_Reply with a number_\n` +
+            `_Type *cancel* to go back to menu_`
         );
     }
+
 
     static profileComplete(name: string): string {
         return (
@@ -108,7 +112,8 @@ export class MessageBuilder {
             `4. Internship\n` +
             `5. Investment\n` +
             `6. Networking\n\n` +
-            `_Reply with a number_`
+            `_Reply with a number_\n` +
+            `_Type *cancel* to go back to menu_`
         );
     }
 
