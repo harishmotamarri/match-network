@@ -55,7 +55,17 @@ export class BotHandler {
         // ── END UPDATED ───────────────────────────────────────────────────────
 
         if (msg === 'help') return this.helpMessage();
-
+        // ── ADMIN COMMANDS (only for ADMIN role users) ────────────────────────────
+        if (msg.startsWith('admin') && session.userId) {
+            const user = await prisma.user.findUnique({
+                where: { id: session.userId },
+                select: { role: true },
+            });
+            if (user?.role === 'ADMIN') {
+                return this.handleAdminCommand(session, msg);
+            }
+        }
+        // ── END ADMIN ─────────────────────────────────────────────────────────────
         switch (session.state) {
             case 'IDLE': return this.handleIdle(session, phone, msg);
             case 'AWAITING_NAME': return this.handleName(session, msg);
@@ -468,6 +478,62 @@ export class BotHandler {
             `• Type *0* to cancel current action\n` +
             `• Type *help* to see this message\n\n` +
             `${MessageBuilder.mainMenu()}`
+        );
+    }
+
+    // ── ADMIN BOT COMMANDS ────────────────────────────────────────────────────
+    private async handleAdminCommand(session: BotSession, msg: string): Promise<string> {
+        const { adminService } = await import('../admin/admin.service');
+
+        // "admin stats"
+        if (msg === 'admin stats') {
+            const stats = await adminService.getStats();
+            return (
+                `📊 *Match Network Stats*\n\n` +
+                `👥 Total Users: ${stats.totalUsers}\n` +
+                `✅ Active: ${stats.activeUsers}\n` +
+                `🚫 Blocked: ${stats.blockedUsers}\n\n` +
+                `🤝 Total Connections: ${stats.totalConnections}\n` +
+                `✅ Accepted: ${stats.acceptedConnections}\n` +
+                `⏳ Pending: ${stats.pendingConnections}\n\n` +
+                `🛠 Skills in DB: ${stats.totalSkills}`
+            );
+        }
+
+        // "admin broadcast Title | Message"
+        if (msg.startsWith('admin broadcast ')) {
+            const parts = msg.replace('admin broadcast ', '').split('|');
+            if (parts.length < 2) {
+                return `Format: _admin broadcast Title | Message_\nExample: _admin broadcast Update | We have new features!_`;
+            }
+            const title = parts[0].trim();
+            const message = parts[1].trim();
+            const result = await adminService.broadcast(session.userId!, title, message, 'ALL');
+            return `📢 Broadcast sent!\n✅ Delivered: ${result.sentCount}\n❌ Failed: ${result.failCount}`;
+        }
+
+        // "admin block <userId>"
+        if (msg.startsWith('admin block ')) {
+            const userId = msg.replace('admin block ', '').trim();
+            const user = await adminService.blockUser(userId);
+            return `🚫 *${user.name}* has been blocked.`;
+        }
+
+        // "admin unblock <userId>"
+        if (msg.startsWith('admin unblock ')) {
+            const userId = msg.replace('admin unblock ', '').trim();
+            const user = await adminService.unblockUser(userId);
+            return `✅ *${user.name}* has been unblocked.`;
+        }
+
+        // Admin help
+        return (
+            `🔧 *Admin Commands*\n\n` +
+            `• *admin stats* — view platform stats\n` +
+            `• *admin broadcast Title | Message* — message all users\n` +
+            `• *admin block <userId>* — block a user\n` +
+            `• *admin unblock <userId>* — unblock a user\n\n` +
+            `_These commands only work for admin accounts._`
         );
     }
 }

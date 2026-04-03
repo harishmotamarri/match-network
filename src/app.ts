@@ -11,6 +11,7 @@ import userRoutes from './modules/users/user.routes';
 import skillRoutes from './modules/skills/skills.routes';
 import connectionsRoutes from './modules/connections/connections.routes';
 import whatsappRoutes from './modules/whatsapp/whatsapp.routes';
+import adminRoutes from './modules/admin/admin.routes';
 const app = express();
 app.set('trust proxy', 1);
 // Security middleware
@@ -39,6 +40,7 @@ app.use('/v1/users', userRoutes);
 app.use('/v1/skills', skillRoutes);
 app.use('/v1/connections', connectionsRoutes);
 app.use('/v1/whatsapp', whatsappRoutes);
+app.use('/v1/admin', adminRoutes);
 // 404 handler
 app.use((req, res) => {
     res.status(404).json({ success: false, message: 'Route not found' });
