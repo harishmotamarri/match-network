@@ -29,7 +29,7 @@ export class AdminController {
     async blockUser(req: Request, res: Response) {
         try {
             const { userId } = req.params;
-            const user = await adminService.blockUser(userId);
+            const user = await adminService.blockUser(userId as string);
             res.json({ success: true, message: `${user.name} blocked`, data: user });
         } catch (err) {
             logger.error({ err }, 'Admin blockUser error');
@@ -40,7 +40,7 @@ export class AdminController {
     async unblockUser(req: Request, res: Response) {
         try {
             const { userId } = req.params;
-            const user = await adminService.unblockUser(userId);
+            const user = await adminService.unblockUser(userId as string);
             res.json({ success: true, message: `${user.name} unblocked`, data: user });
         } catch (err) {
             logger.error({ err }, 'Admin unblockUser error');

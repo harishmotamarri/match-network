@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import { adminController } from './admin.controller';
-import { authMiddleware } from '../auth/middleware';
+import { authenticate } from '../auth/middleware';
 
 const router = Router();
 
 // All admin routes require JWT + ADMIN role
-router.use(authMiddleware);
+router.use(authenticate);
 router.use((req: any, res: any, next: any) => {
     if (req.user?.role !== 'ADMIN') {
         return res.status(403).json({ success: false, message: 'Admin access required' });
