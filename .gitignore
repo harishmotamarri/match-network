@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Environment variables (NEVER commit secrets)
+.env
+.env.local
+.env.*.local
+
+# Prisma generated client
+/src/generated/prisma
+
+# Logs
+*.log
+npm-debug.log*
+logs/
+
+# OS / Editor artifacts
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# PowerShell / curl leftover files (from test commands)
+-Body
+-ContentType
+-H
+-d
+Invoke-RestMethod
+curl
+
+# TypeScript build info
+*.tsbuildinfo
