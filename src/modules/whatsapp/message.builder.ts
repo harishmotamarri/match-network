@@ -14,8 +14,8 @@ export class MessageBuilder {
             `3️⃣  Pending requests\n` +
             `4️⃣  Update availability\n` +
             `5️⃣  Edit my profile\n\n` +
-            `_Reply with a number_\n` +
-            `_Type *help* anytime for assistance_`
+            `_Reply with a number, or just ask me anything!_\n` +
+            `_Type *help* for assistance_`
         );
     }
 

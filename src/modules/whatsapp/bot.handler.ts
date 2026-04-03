@@ -6,7 +6,7 @@ import { skillsService } from '../skills/skills.service';
 import { userService } from '../users/user.service';
 import { authService } from '../auth/auth.service';
 import logger from '../../shared/logger';
-
+import Groq from 'groq-sdk';
 const CONNECTION_TYPE_MAP: Record<string, string> = {
     '1': 'COLLABORATION', '2': 'MENTORSHIP', '3': 'JOB',
     '4': 'INTERNSHIP', '5': 'INVESTMENT', '6': 'NETWORKING',
@@ -169,9 +169,11 @@ export class BotHandler {
             case '4': return this.startUpdateAvailability(session);
             case '5': return this.startEditProfile(session);  // ← NEW
             default:
-                return `Please reply with a number 1–5.\n\n${MessageBuilder.mainMenu()}`;
+                if (session.userId) {
+                    return this.handleAiChat(session, msg);
+                }
+                return this.goToMenu(session);
         }
-    }
     // ── END UPDATED ───────────────────────────────────────────────────────────
 
     // ── NEW: PROFILE SETUP FLOW ───────────────────────────────────────────────
@@ -496,7 +498,84 @@ export class BotHandler {
             `${MessageBuilder.mainMenu()}`
         );
     }
+    // ── AI CHAT ───────────────────────────────────────────────────────────────
+    private async handleAiChat(session: BotSession, msg: string): Promise<string> {
+        try {
+            const client = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
+            // Get user context for personalized responses
+            const user = await prisma.user.findUnique({
+                where: { id: session.userId! },
+                include: {
+                    profile: true,
+                    userSkills: { include: { skill: true } },
+                },
+            });
+
+            const userContext = user
+                ? `Name: ${user.name}, ` +
+                `Skills: ${user.userSkills.map(s => s.skill.name).join(', ') || 'none set'}, ` +
+                `Experience: ${user.profile?.experienceLevel || 'not set'}, ` +
+                `City: ${user.profile?.city || 'not set'}, ` +
+                `Availability: ${user.profile?.availability || 'not set'}`
+                : 'New user';
+
+            const response = await client.chat.completions.create({
+                model: 'llama-3.3-70b-versatile',
+                max_tokens: 300,
+                messages: [
+                    {
+                        role: 'system',
+                        content: `You are a friendly assistant for Match Network, a WhatsApp professional networking platform.
+
+Current user: ${userContext}
+
+Platform features users can do:
+- Type *1* → Find matches by skill
+- Type *2* → View my connections  
+- Type *3* → View pending requests
+- Type *4* → Update availability
+- Type *5* → Edit profile
+- Type *menu* → Go to main menu
+- Type *cancel* → Exit any flow
+- Type *help* → Get help
+
+Matching algorithm uses: skill similarity (35%), location (20%), experience (15%), reputation (15%), availability (10%), interests (5%).
+
+You help users with:
+- Networking tips and advice
+- Writing good bios
+- Choosing the right skills to add
+- Understanding how matching works
+- Any career or collaboration questions
+
+Rules:
+- Keep responses under 150 words
+- Use WhatsApp formatting (*bold*, _italic_)
+- Use emojis naturally but not excessively
+- If user wants to DO something, guide them to the right menu option
+- Never make up features that don't exist
+- Be encouraging and friendly
+- Respond in the same language the user writes in`,
+                    },
+                    {
+                        role: 'user',
+                        content: msg,
+                    },
+                ],
+            });
+
+            const reply = response.choices[0]?.message?.content ??
+                `I didn't quite get that. Type *menu* to see what I can do!`;
+
+            return reply + `\n\n_Type *menu* to go back to main menu_`;
+
+        } catch (err) {
+            logger.error({ err }, 'AI chat error');
+            return `Sorry, I couldn't process that right now. Type *menu* to see what I can do!`;
+        }
+    }
+    // ── END AI CHAT ───────────────────────────────────────────────────────────
     // ── ADMIN BOT COMMANDS ────────────────────────────────────────────────────
     private async handleAdminCommand(session: BotSession, msg: string): Promise<string> {
         const { adminService } = await import('../admin/admin.service');
