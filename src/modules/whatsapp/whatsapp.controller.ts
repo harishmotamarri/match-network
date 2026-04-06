@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { botHandler } from './bot.handler';
-import { sendTextMessage } from './meta.client';
+import { sendTextMessage, markReadAndTyping } from './meta.client';
 import { config } from '../../config';
 import logger from '../../shared/logger';
 
@@ -51,8 +51,16 @@ export class WhatsAppController {
 
             const from = message.from;           // e.g. "919876543210" — no "+" prefix
             const text = message.text.body ?? '';
+            const messageId = message.id;
 
-            logger.info({ from, text }, 'Meta WA message received');
+            logger.info({ from, text, messageId }, 'Meta WA message received');
+
+            // Send read receipt and typing indicator immediately
+            if (messageId) {
+                markReadAndTyping(messageId).catch(err => 
+                    logger.error({err}, 'Failed to send typing indicator')
+                );
+            }
 
             const reply = await botHandler.handle(from, text);
 

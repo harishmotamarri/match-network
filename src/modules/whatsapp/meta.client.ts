@@ -61,3 +61,24 @@ export async function sendTemplateMessage(
         throw new Error('Failed to send template message');
     }
 }
+
+export async function markReadAndTyping(messageId: string): Promise<void> {
+    try {
+        await axios.post(
+            BASE_URL,
+            {
+                messaging_product: 'whatsapp',
+                status: 'read',
+                message_id: messageId,
+                typing_indicator: { type: 'text' }
+            },
+            { headers }
+        );
+    } catch (err: any) {
+        logger.error(
+            { err: err.response?.data ?? err.message, messageId },
+            'Meta WA mark read and typing failed'
+        );
+        // We don't throw an error here because typing indicator failure is non-critical
+    }
+}
