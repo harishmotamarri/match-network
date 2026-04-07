@@ -39,14 +39,20 @@ export class MessageBuilder {
 
     static askExperienceLevel(): string {
         return (
-            `💼 *What's your experience level?*\n\n` +
-            `1. 🎓 Student\n` +
-            `2. 🌱 Junior (0–2 years)\n` +
-            `3. 🔧 Mid-level (2–5 years)\n` +
-            `4. 🚀 Senior (5–10 years)\n` +
-            `5. 🏆 Expert (10+ years)\n\n` +
-            `_Reply with a number_\n` +
-            `_Type *cancel* to go back to menu_`
+            `────── *EXPERIENCE LEVEL* ──────\n\n` +
+            `💼 What's your professional experience?\n\n` +
+            `🎓  *1.* Student\n` +
+            `      _Still studying or just graduated_\n\n` +
+            `🌱  *2.* Junior (0–2 years)\n` +
+            `      _Early stage in your career_\n\n` +
+            `🔧  *3.* Mid-level (2–5 years)\n` +
+            `      _Solid professional experience_\n\n` +
+            `🚀  *4.* Senior (5–10 years)\n` +
+            `      _Deep expertise and leadership_\n\n` +
+            `🏆  *5.* Expert (10+ years)\n` +
+            `      _Industry veteran_\n\n` +
+            `────────────────────────────\n` +
+            `_Reply with a number (1-5) or type *cancel*_`
         );
     }
 
@@ -71,12 +77,16 @@ export class MessageBuilder {
 
     static askProfileAvailability(): string {
         return (
-            `📶 *What's your current availability?*\n\n` +
-            `1. 🟢 Available — actively looking to connect\n` +
-            `2. 🟡 Busy — open but selective\n` +
-            `3. 🔴 Away — not available right now\n\n` +
-            `_Reply with a number_\n` +
-            `_Type *cancel* to go back to menu_`
+            `────── *AVAILABILITY* ──────\n\n` +
+            `Let matches know if you're open to connect right now:\n\n` +
+            `🟢  *1.* Available\n` +
+            `      _Actively looking for connections_\n\n` +
+            `🟡  *2.* Busy\n` +
+            `      _Open, but responses may be slow_\n\n` +
+            `🔴  *3.* Away\n` +
+            `      _Not taking new connections_\n\n` +
+            `────────────────────────\n` +
+            `_Reply with a number (1-3) or type *cancel*_`
         );
     }
 
@@ -100,15 +110,16 @@ export class MessageBuilder {
 
     static askConnectionType(): string {
         return (
-            `🤝 *What type of connection are you looking for?*\n\n` +
-            `1. Collaboration\n` +
-            `2. Mentorship\n` +
-            `3. Job opportunity\n` +
-            `4. Internship\n` +
-            `5. Investment\n` +
-            `6. Networking\n\n` +
-            `_Reply with a number_\n` +
-            `_Type *cancel* to go back to menu_`
+            `────── *CONNECTION TYPE* ──────\n\n` +
+            `🤝 What are you primarily looking for?\n\n` +
+            `💡  *1.* Collaboration (Projects/Startup)\n` +
+            `🎓  *2.* Mentorship\n` +
+            `💼  *3.* Job opportunity\n` +
+            `📚  *4.* Internship\n` +
+            `💰  *5.* Investment\n` +
+            `🌐  *6.* General Networking\n\n` +
+            `───────────────────────────\n` +
+            `_Reply with a number (1-6) or type *cancel*_`
         );
     }
 
@@ -166,11 +177,16 @@ export class MessageBuilder {
 
     static availabilityMenu(): string {
         return (
-            `📶 *Set your availability:*\n\n` +
-            `1. 🟢 Available\n` +
-            `2. 🟡 Busy\n` +
-            `3. 🔴 Away\n\n` +
-            `_Reply with a number_`
+            `────── *AVAILABILITY* ──────\n\n` +
+            `Let matches know if you're open to connect right now:\n\n` +
+            `🟢  *1.* Available\n` +
+            `      _Actively looking for connections_\n\n` +
+            `🟡  *2.* Busy\n` +
+            `      _Open, but responses may be slow_\n\n` +
+            `🔴  *3.* Away\n` +
+            `      _Not taking new connections_\n\n` +
+            `────────────────────────\n` +
+            `_Reply with a number (1-3)_`
         );
     }
 }
