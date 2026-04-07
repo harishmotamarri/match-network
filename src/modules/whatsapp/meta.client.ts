@@ -62,6 +62,41 @@ export async function sendTemplateMessage(
     }
 }
 
+export async function sendInteractiveList(
+    to: string,
+    bodyText: string,
+    buttonText: string,
+    sections: any[]
+): Promise<void> {
+    try {
+        await axios.post(
+            BASE_URL,
+            {
+                messaging_product: 'whatsapp',
+                recipient_type: 'individual',
+                to,
+                type: 'interactive',
+                interactive: {
+                    type: 'list',
+                    body: { text: bodyText },
+                    action: {
+                        button: buttonText,
+                        sections
+                    }
+                }
+            },
+            { headers }
+        );
+    } catch (err: any) {
+        const metaError = err.response?.data?.error?.message || err.message;
+        logger.error(
+            { err: err.response?.data ?? err.message, to },
+            'Meta WA send list failed'
+        );
+        throw new Error(`Meta API Error: ${metaError}`);
+    }
+}
+
 export async function markReadAndTyping(messageId: string): Promise<void> {
     try {
         await axios.post(

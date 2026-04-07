@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { botHandler } from './bot.handler';
-import { sendTextMessage, markReadAndTyping } from './meta.client';
+import { sendTextMessage, sendInteractiveList, markReadAndTyping } from './meta.client';
 import { config } from '../../config';
 import logger from '../../shared/logger';
 
@@ -40,31 +40,57 @@ export class WhatsAppController {
 
             const message = value.messages[0];
 
-            // Only handle text messages for now
-            if (message.type !== 'text') {
+            let text = '';
+            if (message.type === 'text') {
+                text = message.text.body ?? '';
+            } else if (message.type === 'interactive') {
+                const interactive = message.interactive;
+                if (interactive.type === 'list_reply') {
+                    text = interactive.list_reply.id;
+                } else if (interactive.type === 'button_reply') {
+                    text = interactive.button_reply.id;
+                }
+            } else {
                 await sendTextMessage(
                     message.from,
-                    `Sorry, I can only process text messages right now. Please type *menu* to start.`
+                    `Sorry, I can only process text and menu selections right now. Please type *menu* to start.`
                 );
                 return;
             }
 
             const from = message.from;           // e.g. "919876543210" — no "+" prefix
-            const text = message.text.body ?? '';
             const messageId = message.id;
 
             logger.info({ from, text, messageId }, 'Meta WA message received');
 
             // Send read receipt and typing indicator immediately
             if (messageId) {
-                markReadAndTyping(messageId).catch(err => 
-                    logger.error({err}, 'Failed to send typing indicator')
+                markReadAndTyping(messageId).catch(err =>
+                    logger.error({ err }, 'Failed to send typing indicator')
                 );
             }
 
             const reply = await botHandler.handle(from, text);
 
-            await sendTextMessage(from, reply);
+            if (typeof reply === 'string') {
+                await sendTextMessage(from, reply);
+            } else if (reply && reply.type === 'list') {
+                try {
+                    await sendInteractiveList(from, reply.text, reply.buttonText, reply.sections);
+                } catch (listErr: any) {
+                    // Fallback to text if interactive list fails, with error context for debugging
+                    let fallbackText = `${reply.text}\n\n`;
+                    reply.sections.forEach((sec: any) => {
+                        fallbackText += `*${sec.title}*\n`;
+                        sec.rows.forEach((row: any) => {
+                            fallbackText += `${row.id}. ${row.title}\n`;
+                        });
+                    });
+                    
+                    // Prepend the error to help identify the meta failure instantly 
+                    await sendTextMessage(from, `[Debug] ${listErr.message}\n\n${fallbackText}`);
+                }
+            }
 
         } catch (err: any) {
             logger.error({ err }, 'Meta webhook processing error');
