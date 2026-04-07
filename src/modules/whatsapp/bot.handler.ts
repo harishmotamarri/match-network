@@ -44,7 +44,14 @@ export class BotHandler {
                 select: { isActive: true }
             });
             if (user && !user.isActive) {
-                return `🚫 Your account is currently suspended. Please contact support.`;
+                return (
+                    `🚫 *Account Suspended*\n` +
+                    `──────────────────────────\n\n` +
+                    `Your account has been temporarily suspended.\n\n` +
+                    `Please contact our support team to restore access.\n\n` +
+                    `──────────────────────────\n` +
+                    `_support@matchnetwork.in_`
+                );
             }
         }
 
@@ -52,7 +59,11 @@ export class BotHandler {
             return await this.route(session, msg, phone);
         } catch (err: any) {
             logger.error({ err, phone }, 'Bot handler error');
-            return `❌ ${err.message || 'Something went wrong. Please try again.'}`;
+            return (
+                `⚠️ *Something went wrong*\n\n` +
+                `_${err.message || 'An unexpected error occurred.'}_\n\n` +
+                `Please try again or type *menu* to start over.`
+            );
         }
     }
 
@@ -121,7 +132,11 @@ export class BotHandler {
     // ── NEW USER: collect name ────────────────────────────────────────────────
     private async handleName(session: BotSession, msg: string): Promise<string> {
         if (msg.length < 2 || msg.length > 100) {
-            return `Please enter a valid name (2–100 characters):`;
+            return (
+                `⚠️ *Invalid Name*\n\n` +
+                `Please enter your full name (between 2 and 100 characters).\n\n` +
+                `_e.g. Rahul Sharma_`
+            );
         }
 
         const phone = session.phoneNumber;
@@ -169,7 +184,11 @@ export class BotHandler {
 
             return MessageBuilder.welcome(user.name);
         } catch {
-            return `❌ Invalid or expired code. Try again, or type *menu* to restart.`;
+            return (
+                `❌ *Verification Failed*\n\n` +
+                `The code you entered is *invalid or expired*.\n\n` +
+                `Please try again, or type *menu* to restart.`
+            );
         }
     }
     // ── END UPDATED ───────────────────────────────────────────────────────────
@@ -224,11 +243,19 @@ export class BotHandler {
         const names = msg.split(',').filter(s => s.trim().length > 0).map(s => s.trim());
 
         if (names.length === 0) {
-            return `Please enter at least one skill:`;
+            return (
+                `⚠️ *No Skills Entered*\n\n` +
+                `Please type at least one skill, separated by commas.\n\n` +
+                `_e.g. React, Node.js, Design_`
+            );
         }
 
         if (names.length > 10) {
-            return `Maximum 10 skills allowed. Please narrow down your selection:`;
+            return (
+                `⚠️ *Too Many Skills*\n\n` +
+                `You entered *${names.length} skills* but the maximum is *10*.\n\n` +
+                `Please narrow it down to your top skills and try again.`
+            );
         }
 
         const selectedSkillIds = await skillsService.ensureSkillsExist(names);
@@ -310,7 +337,11 @@ export class BotHandler {
         const names = msg.split(',').filter(s => s.trim().length > 0).map(s => s.trim());
 
         if (names.length === 0) {
-            return `Please enter at least one skill:`;
+            return (
+                `⚠️ *No Skills Entered*\n\n` +
+                `Type the skills you're looking for, separated by commas.\n\n` +
+                `_e.g. React, Marketing, Fundraising_`
+            );
         }
 
         const selectedSkillIds = await skillsService.ensureSkillsExist(names);
@@ -358,7 +389,11 @@ export class BotHandler {
 
             const idx = parseInt(msg, 10) - 1;
             if (isNaN(idx) || idx < 0 || idx >= matches.length) {
-                return `Please reply with a number 1–${matches.length}, or *0* for menu.`;
+                return (
+                    `⚠️ *Invalid Selection*\n\n` +
+                    `Please reply with a number *1–${matches.length}* to select a match.\n\n` +
+                    `_Or type *0* to return to the menu._`
+                );
             }
 
             await sessionManager.patch(session.phoneNumber, {
@@ -366,9 +401,13 @@ export class BotHandler {
             });
 
             return (
-                `You selected *${matches[idx].name}*.\n\n` +
-                `Add a short note (optional):\n_"Looking for a React co-founder!"_\n\n` +
-                `Or reply *skip* to send without a note.`
+                `✅ *Match Selected*\n` +
+                `──────────────────────────\n\n` +
+                `You've chosen to connect with *${matches[idx].name}*.\n\n` +
+                `💬 *Add a personal note* _(optional)_\n` +
+                `_e.g. "Looking for a React co-founder to build our MVP!"_\n\n` +
+                `──────────────────────────\n` +
+                `_Type your note or reply *skip* to send without one_`
             );
         }
 
@@ -419,7 +458,13 @@ export class BotHandler {
         // ── STEP 2: user already picked a request, now 1=accept or 2=reject ──
         if (selectedRequestIndex !== undefined && selectedRequestIndex !== null) {
             if (msg !== '1' && msg !== '2') {
-                return `Please reply *1* to accept or *2* to reject. Or *0* for menu.`;
+                return (
+                    `⚠️ *Invalid Response*\n\n` +
+                    `Please reply with:\n` +
+                    `*1* ✅  Accept request\n` +
+                    `*2* ❌  Decline request\n\n` +
+                    `_Or type *0* to return to the menu._`
+                );
             }
 
             const connection = pendingRequests[selectedRequestIndex];
@@ -442,7 +487,11 @@ export class BotHandler {
         // ── STEP 1: pick which request to respond to ──────────────────────────
         const idx = parseInt(msg, 10) - 1;
         if (isNaN(idx) || idx < 0 || idx >= pendingRequests.length) {
-            return `Please reply with a number 1–${pendingRequests.length}. Or *0* for menu.`;
+            return (
+                `⚠️ *Invalid Selection*\n\n` +
+                `Please reply with a number *1–${pendingRequests.length}* to choose a request.\n\n` +
+                `_Or type *0* to return to the menu._`
+            );
         }
 
         await sessionManager.patch(session.phoneNumber, {
@@ -451,11 +500,16 @@ export class BotHandler {
 
         const picked = pendingRequests[idx];
         return (
-            `You selected *${picked.requester.name}*'s request.\n\n` +
-            `Reply:\n` +
-            `*1* ✅ Accept\n` +
-            `*2* ❌ Reject\n\n` +
-            `Or *0* for menu.`
+            `📬 *Request Selected*\n` +
+            `──────────────────────────\n\n` +
+            `👤 *${picked.requester.name}* wants to connect.\n` +
+            `📍 ${picked.requester.profile?.city || 'Location unknown'}\n` +
+            `💬 _"${picked.note || 'No message attached'}"_\n\n` +
+            `How would you like to respond?\n\n` +
+            `*1* ✅  Accept request\n` +
+            `*2* ❌  Decline request\n\n` +
+            `──────────────────────────\n` +
+            `_Or type *0* to go back to menu_`
         );
     }
 
@@ -485,11 +539,12 @@ export class BotHandler {
 
     private helpMessage(): any {
         return MessageBuilder.mainMenu(
-            `ℹ️ *Match Network Help*\n\n` +
-            `• Type *menu* or *hi* — go to main menu\n` +
-            `• Type *0* or *cancel* — exit current flow\n` +
-            `• Type *help* — see this message\n\n` +
-            `_These commands work from anywhere, anytime._`
+            `ℹ️ *How to use Match Network*\n\n` +
+            `• *1–5* — Select a menu option\n` +
+            `• *menu* or *hi* — Return to main menu\n` +
+            `• *0* or *cancel* — Exit any flow\n` +
+            `• *help* — See this message\n\n` +
+            `_All commands work from anywhere, anytime._`
         );
     }
     // ── AI CHAT ───────────────────────────────────────────────────────────────

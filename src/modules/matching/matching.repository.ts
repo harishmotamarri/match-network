@@ -38,6 +38,13 @@ export async function fetchCandidates(
         excludedIds.add(c.receiverId);
     });
 
+    console.log('DEBUG fetchCandidates:', {
+        requesterId,
+        requiredSkillIds,
+        excludedIds: Array.from(excludedIds),
+        filters
+    });
+
     // Fetch candidates who have at least one of the required skills
     const candidates = await prisma.user.findMany({
         where: {
@@ -62,6 +69,15 @@ export async function fetchCandidates(
         },
         take: limit,
     });
+
+    console.log('DEBUG candidates found before filtering:', candidates.length);
+    console.log('DEBUG candidates details:', candidates.map(c => ({
+        id: c.id,
+        name: c.name,
+        hasProfile: !!c.profile,
+        skillCount: c.userSkills.length,
+        skills: c.userSkills.map(us => us.skill.name)
+    })));
 
     // Map to scoring shape
     return candidates

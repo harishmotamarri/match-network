@@ -35,6 +35,8 @@ export class MatchingService {
             experienceLevel,
         } = request;
 
+        logger.info({ requesterId, requiredSkillIds, connectionType }, 'Find matches request received');
+
         // Check cache first
         const cacheKey = `matches:${requesterId}:${requiredSkillIds.sort().join(',')}`;
         const cached = await redis.get(cacheKey);
@@ -53,7 +55,8 @@ export class MatchingService {
         });
 
         if (!requester?.profile) {
-            throw new Error('Complete your profile before requesting connections');
+            logger.warn({ requesterId }, 'User has no profile — returning empty matches');
+            return []; // Profile not set up yet — return empty rather than crashing
         }
 
         const requesterContext: RequesterContext = {
@@ -76,19 +79,26 @@ export class MatchingService {
         });
 
         logger.info(
-            { requesterId, candidateCount: candidates.length },
-            'Scoring candidates'
+            { requesterId, candidateCount: candidates.length, requiredSkillIds },
+            'Fetched candidates for scoring'
         );
+
+        if (candidates.length === 0) {
+            logger.warn({ requesterId, requiredSkillIds }, 'No candidates found with required skills');
+        }
 
         // Score all candidates
         const scored = candidates
-            .map((candidate) => ({
-                candidate,
-                score: scoreCandidate(candidate, requesterContext),
-            }))
+            .map((candidate) => {
+                const score = scoreCandidate(candidate, requesterContext);
+                logger.debug({ candidateId: candidate.userId, score }, 'Candidate scored');
+                return { candidate, score };
+            })
             .filter((r) => r.score > 0.1)
             .sort((a, b) => b.score - a.score)
             .slice(0, 10);
+
+        logger.info({ requesterId, scoredCount: scored.length }, 'Candidates scored and filtered');
 
         if (scored.length === 0) return [];
 
@@ -167,8 +177,9 @@ export class MatchingService {
             },
         });
 
-        // Invalidate match cache
-        await redis.del(`matches:${requesterId}:*`);
+        // Invalidate match cache (ioredis does not support glob in .del, use keys+del)
+        const cacheKeys = await redis.keys(`matches:${requesterId}:*`);
+        if (cacheKeys.length > 0) await redis.del(...cacheKeys);
         // Notify receiver about new connection request
         const requester = await prisma.user.findUnique({
             where: { id: requesterId },
@@ -217,8 +228,9 @@ export class MatchingService {
             },
         });
 
-        // Clear match cache for both users
-        await redis.del(`matches:${connection.requesterId}:*`);
+        // Clear match cache for both users (ioredis does not support glob in .del)
+        const cacheKeys = await redis.keys(`matches:${connection.requesterId}:*`);
+        if (cacheKeys.length > 0) await redis.del(...cacheKeys);
 
         // ── NEW: send WhatsApp notification ──────────────────────────────────────
         if (action === 'ACCEPTED') {
