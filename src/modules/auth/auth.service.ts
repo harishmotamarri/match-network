@@ -2,7 +2,7 @@ import prisma from '../../shared/database/prisma';
 import redis from '../../shared/cache/redis';
 import { generateOtp, saveOtp, verifyOtp } from '../../shared/utils/otp';
 import { signAccessToken } from '../../shared/utils/jwt';
-import { smsService } from '../notifications/sms.service';
+import { sendTextMessage } from '../whatsapp/meta.client';
 import logger from '../../shared/logger';
 
 export class AuthService {
@@ -15,13 +15,18 @@ export class AuthService {
         logger.info({ phoneNumber, otp }, '📱 OTP generated');
         console.log(`\n🔐 OTP for ${phoneNumber}: ${otp}\n`);
 
-        // Send OTP via Standard SMS
-        const delivered = await smsService.sendOtp(phoneNumber, otp);
-
-        if (delivered) {
-            logger.info({ phoneNumber }, '✅ OTP sent via Standard SMS');
-        } else {
-            logger.warn({ phoneNumber }, '⚠️ SMS delivery skipped or failed — OTP is in server logs (dev mode)');
+        // Send OTP via WhatsApp
+        try {
+            // Clean phone number for Meta (ensure no '+' and only digits)
+            const formattedPhone = phoneNumber.replace(/\D/g, '');
+            const message = `🔐 *Match Network*\n\nYour login code is: *${otp}*\n\nThis code is valid for 5 minutes. Do not share it with anyone.`;
+            
+            await sendTextMessage(formattedPhone, message);
+            logger.info({ phoneNumber }, '✅ OTP sent via WhatsApp');
+        } catch (error: any) {
+            logger.error({ phoneNumber, error: error.message }, '❌ WhatsApp OTP delivery failed');
+            // If WhatsApp fails, we still return success as the OTP is in logs for dev/debug
+            // But we should ideally throw if we want the frontend to show an error
         }
 
         return { message: 'OTP sent successfully' };
