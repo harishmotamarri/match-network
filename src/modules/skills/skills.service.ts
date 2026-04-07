@@ -16,6 +16,30 @@ export class SkillsService {
         return skills;
     }
 
+    async ensureSkillsExist(names: string[]) {
+        const skillIds: string[] = [];
+        for (let name of names) {
+            name = name.trim();
+            if (!name) continue;
+            
+            const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+            if (!slug) continue;
+
+            let skill = await prisma.skill.findUnique({ where: { slug } });
+            if (!skill) {
+                skill = await prisma.skill.create({
+                    data: {
+                        name,
+                        slug,
+                        category: 'Other'
+                    }
+                });
+            }
+            skillIds.push(skill.id);
+        }
+        return skillIds;
+    }
+
     async addUserSkill(userId: string, skillId: string, proficiencyLevel: number) {
         try {
             const userSkill = await prisma.userSkill.upsert({

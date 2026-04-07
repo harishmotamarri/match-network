@@ -1,22 +1,30 @@
 export class MessageBuilder {
-    static welcome(name?: string): string {
+    static welcome(name?: string): any {
         return name
-            ? `👋 Welcome back, *${name}*!\n\n${this.mainMenu()}`
+            ? this.mainMenu(`👋 Welcome back, *${name}*!`)
             : `👋 Welcome to *Match Network*!\n\nConnect with collaborators, mentors & co-founders.\n\nWhat's your full name?`;
     }
 
-    // ── UPDATED: added option 5 ───────────────────────────────────────────────
-    static mainMenu(): string {
-        return (
-            `What would you like to do?\n\n` +
-            `1️⃣  Find matches\n` +
-            `2️⃣  My connections\n` +
-            `3️⃣  Pending requests\n` +
-            `4️⃣  Update availability\n` +
-            `5️⃣  Edit my profile\n\n` +
-            `_Reply with a number, or just ask me anything!_\n` +
-            `_Type *help* for assistance_`
-        );
+    // ── NATIVE INTERACTIVE MENU ───────────────────────────────────────────────
+    static mainMenu(prefixText?: string): any {
+        const textStr = (prefixText ? prefixText + '\n\n' : '') + `What would you like to do?`;
+        return {
+            type: 'list',
+            text: textStr,
+            buttonText: 'Main Menu',
+            sections: [
+                {
+                    title: 'Options',
+                    rows: [
+                        { id: '1', title: 'Find matches' },
+                        { id: '2', title: 'My connections' },
+                        { id: '3', title: 'Pending requests' },
+                        { id: '4', title: 'Update availability' },
+                        { id: '5', title: 'Edit my profile' }
+                    ]
+                }
+            ]
+        };
     }
 
     static otpSent(phone: string): string {
@@ -46,20 +54,13 @@ export class MessageBuilder {
         );
     }
 
-    static askProfileSkills(skillList: Array<{ id: string; name: string; category: string }>): string {
-        let msg = `🛠 *What are your top skills?*\n\nPick up to 10 (comma-separated):\n\n`;
-
-        let currentCategory = '';
-        skillList.forEach((s, i) => {
-            if (s.category !== currentCategory) {
-                currentCategory = s.category;
-                msg += `\n*${currentCategory}*\n`;
-            }
-            msg += `${i + 1}. ${s.name}\n`;
-        });
-
-        msg += `\nExample: _1, 3, 7_`;
-        return msg;
+    static askProfileSkills(): string {
+        return (
+            `🛠 *What are your top skills?*\n\n` +
+            `Type your skills, separated by commas:\n` +
+            `_e.g. React, Node.js, Typescript, Design_\n\n` +
+            `_Maximum 10 skills allowed_`
+        );
     }
 
     static askLocation(): string {
@@ -84,23 +85,21 @@ export class MessageBuilder {
     }
 
 
-    static profileComplete(name: string): string {
-        return (
+    static profileComplete(name: string): any {
+        return this.mainMenu(
             `✅ *Profile complete, ${name}!*\n\n` +
-            `You're all set to start networking 🚀\n\n` +
-            this.mainMenu()
+            `You're all set to start networking 🚀`
         );
     }
 
     // ── END NEW ───────────────────────────────────────────────────────────────
 
-    static askSkills(skillList: Array<{ id: string; name: string; category: string }>): string {
-        let msg = `🛠 *Which skills are you looking for?*\n\nReply with numbers separated by commas:\n\n`;
-        skillList.forEach((s, i) => {
-            msg += `${i + 1}. ${s.name} _(${s.category})_\n`;
-        });
-        msg += `\nExample: _1, 3, 5_`;
-        return msg;
+    static askSkills(): string {
+        return (
+            `🛠 *Which skills are you looking for?*\n\n` +
+            `Type the skills separated by commas:\n` +
+            `_e.g. React, UI Design, Marketing_`
+        );
     }
 
     static askConnectionType(): string {
@@ -117,9 +116,9 @@ export class MessageBuilder {
         );
     }
 
-    static matchResults(matches: any[]): string {
+    static matchResults(matches: any[]): any {
         if (matches.length === 0) {
-            return `😔 No matches found for those skills right now.\n\nTry different skills.\n\n${this.mainMenu()}`;
+            return this.mainMenu(`😔 No matches found for those skills right now.\n\nTry different skills.`);
         }
         let msg = `🎯 *Top ${matches.length} match(es) found:*\n\n`;
         matches.forEach((m, i) => {
@@ -134,13 +133,13 @@ export class MessageBuilder {
         return msg;
     }
 
-    static connectionSent(name: string): string {
-        return `✅ Connection request sent to *${name}*!\n\nThey'll be notified on WhatsApp.\n\n${this.mainMenu()}`;
+    static connectionSent(name: string): any {
+        return this.mainMenu(`✅ Connection request sent to *${name}*!\n\nThey'll be notified on WhatsApp.`);
     }
 
-    static pendingRequests(requests: any[]): string {
+    static pendingRequests(requests: any[]): any {
         if (requests.length === 0) {
-            return `📭 No pending requests right now.\n\n${this.mainMenu()}`;
+            return this.mainMenu(`📭 No pending requests right now.`);
         }
         let msg = `📬 *${requests.length} pending request(s):*\n\n`;
         requests.forEach((r, i) => {
@@ -155,9 +154,9 @@ export class MessageBuilder {
         return msg;
     }
 
-    static myConnections(connections: any[], userId: string): string {
+    static myConnections(connections: any[], userId: string): any {
         if (connections.length === 0) {
-            return `🕸 No connections yet.\n\nFind matches to grow your network!\n\n${this.mainMenu()}`;
+            return this.mainMenu(`🕸 No connections yet.\n\nFind matches to grow your network!`);
         }
         let msg = `🌐 *Your Network (${connections.length}):*\n\n`;
         connections.forEach((c, i) => {
@@ -166,7 +165,7 @@ export class MessageBuilder {
                 `${i + 1}. *${other.name}*\n` +
                 `📍 ${other.profile?.city || 'Unknown'} · ${other.profile?.experienceLevel || 'N/A'}\n\n`;
         });
-        return msg + `\n${this.mainMenu()}`;
+        return this.mainMenu(msg);
     }
 
     static availabilityMenu(): string {
