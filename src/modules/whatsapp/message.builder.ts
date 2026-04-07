@@ -5,26 +5,22 @@ export class MessageBuilder {
             : `👋 Welcome to *Match Network*!\n\nConnect with collaborators, mentors & co-founders.\n\nWhat's your full name?`;
     }
 
-    // ── NATIVE INTERACTIVE MENU ───────────────────────────────────────────────
-    static mainMenu(prefixText?: string): any {
-        const textStr = (prefixText ? prefixText + '\n\n' : '') + `What would you like to do?`;
-        return {
-            type: 'list',
-            text: textStr,
-            buttonText: 'Main Menu',
-            sections: [
-                {
-                    title: 'Options',
-                    rows: [
-                        { id: '1', title: 'Find matches' },
-                        { id: '2', title: 'My connections' },
-                        { id: '3', title: 'Pending requests' },
-                        { id: '4', title: 'Update availability' },
-                        { id: '5', title: 'Edit my profile' }
-                    ]
-                }
-            ]
-        };
+    // ── PREMIUM TEXT MENU ─────────────────────────────────────────────────────
+    static mainMenu(prefixText?: string): string {
+        const header = prefixText ? `${prefixText}\n\n` : '';
+        return (
+            header +
+            `────── *MATCH NETWORK* ──────\n\n` +
+            `*Networking*\n` +
+            `🔍  *1.* Find your next match\n` +
+            `🤝  *2.* View my connections\n` +
+            `📬  *3.* See pending requests\n\n` +
+            `*Profile Settings*\n` +
+            `📅  *4.* Update availability\n` +
+            `✨  *5.* Edit my profile\n\n` +
+            `──────────────────────────\n` +
+            `_Reply with a number (1-5) to proceed_`
+        );
     }
 
     static otpSent(phone: string): string {
