@@ -576,55 +576,111 @@ STRICT FORMATTING RULES — follow every rule without exception:
     private async handleAdminCommand(session: BotSession, msg: string): Promise<string> {
         const { adminService } = await import('../admin/admin.service');
 
-        // "admin stats"
+        // ── admin stats ───────────────────────────────────────────────────────
         if (msg === 'admin stats') {
             const stats = await adminService.getStats();
+            const activeRate = stats.totalUsers > 0
+                ? Math.round((stats.activeUsers / stats.totalUsers) * 100)
+                : 0;
+            const acceptRate = stats.totalConnections > 0
+                ? Math.round((stats.acceptedConnections / stats.totalConnections) * 100)
+                : 0;
             return (
-                `📊 *Match Network Stats*\n\n` +
-                `👥 Total Users: ${stats.totalUsers}\n` +
-                `✅ Active: ${stats.activeUsers}\n` +
-                `🚫 Blocked: ${stats.blockedUsers}\n\n` +
-                `🤝 Total Connections: ${stats.totalConnections}\n` +
-                `✅ Accepted: ${stats.acceptedConnections}\n` +
-                `⏳ Pending: ${stats.pendingConnections}\n\n` +
-                `🛠 Skills in DB: ${stats.totalSkills}`
+                `⚙️ *Admin Dashboard*\n` +
+                `──────────────────────────\n\n` +
+                `👥 *User Stats*\n` +
+                `   Total Users:    ${stats.totalUsers}\n` +
+                `   ✅ Active:       ${stats.activeUsers}  _(${activeRate}%)_\n` +
+                `   🚫 Blocked:     ${stats.blockedUsers}\n\n` +
+                `🤝 *Connection Stats*\n` +
+                `   Total:          ${stats.totalConnections}\n` +
+                `   ✅ Accepted:    ${stats.acceptedConnections}  _(${acceptRate}%)_\n` +
+                `   ⏳ Pending:     ${stats.pendingConnections}\n\n` +
+                `🛠 *Platform*\n` +
+                `   Skills in DB:  ${stats.totalSkills}\n\n` +
+                `──────────────────────────\n` +
+                `_Last updated: just now_`
             );
         }
 
-        // "admin broadcast Title | Message"
+        // ── admin broadcast ───────────────────────────────────────────────────
         if (msg.startsWith('admin broadcast ')) {
             const parts = msg.replace('admin broadcast ', '').split('|');
             if (parts.length < 2) {
-                return `Format: _admin broadcast Title | Message_\nExample: _admin broadcast Update | We have new features!_`;
+                return (
+                    `📢 *Broadcast — Format Error*\n` +
+                    `──────────────────────────\n\n` +
+                    `Correct format:\n` +
+                    `_admin broadcast Title | Message_\n\n` +
+                    `Example:\n` +
+                    `_admin broadcast New Feature | We just launched skill filters! 🎉_\n\n` +
+                    `──────────────────────────\n` +
+                    `_Message will be sent to all active users_`
+                );
             }
             const title = parts[0].trim();
             const message = parts[1].trim();
             const result = await adminService.broadcast(session.userId!, title, message, 'ALL');
-            return `📢 Broadcast sent!\n✅ Delivered: ${result.sentCount}\n❌ Failed: ${result.failCount}`;
+            return (
+                `📢 *Broadcast Sent!*\n` +
+                `──────────────────────────\n\n` +
+                `📌 Title:     *${title}*\n` +
+                `💬 Message: _${message}_\n\n` +
+                `📊 *Delivery Report*\n` +
+                `   ✅ Delivered:  ${result.sentCount}\n` +
+                `   ❌ Failed:     ${result.failCount}\n\n` +
+                `──────────────────────────\n` +
+                `_Broadcast complete_`
+            );
         }
 
-        // "admin block <userId>"
+        // ── admin block ───────────────────────────────────────────────────────
         if (msg.startsWith('admin block ')) {
-            const userId = msg.replace('admin block ', '').trim();
-            const user = await adminService.blockUser(userId);
-            return `🚫 *${user.name}* has been blocked.`;
+            const identifier = msg.replace('admin block ', '').trim();
+            const user = await adminService.blockUser(identifier);
+            return (
+                `🚫 *User Blocked*\n` +
+                `──────────────────────────\n\n` +
+                `👤 Name:   *${user.name}*\n` +
+                `📱 Phone:  _${user.phoneNumber}_\n\n` +
+                `This user can no longer interact with the bot.\n\n` +
+                `──────────────────────────\n` +
+                `_Use *admin unblock <phone>* to restore access_`
+            );
         }
 
-        // "admin unblock <userId>"
+        // ── admin unblock ─────────────────────────────────────────────────────
         if (msg.startsWith('admin unblock ')) {
-            const userId = msg.replace('admin unblock ', '').trim();
-            const user = await adminService.unblockUser(userId);
-            return `✅ *${user.name}* has been unblocked.`;
+            const identifier = msg.replace('admin unblock ', '').trim();
+            const user = await adminService.unblockUser(identifier);
+            return (
+                `✅ *User Unblocked*\n` +
+                `──────────────────────────\n\n` +
+                `👤 Name:   *${user.name}*\n` +
+                `📱 Phone:  _${user.phoneNumber}_\n\n` +
+                `This user can now access the platform again.\n\n` +
+                `──────────────────────────\n` +
+                `_Access fully restored_`
+            );
         }
 
-        // Admin help
+        // ── default: admin command reference ─────────────────────────────────
         return (
-            `🔧 *Admin Commands*\n\n` +
-            `• *admin stats* — view platform stats\n` +
-            `• *admin broadcast Title | Message* — message all users\n` +
-            `• *admin block <userId>* — block a user\n` +
-            `• *admin unblock <userId>* — unblock a user\n\n` +
-            `_These commands only work for admin accounts._`
+            `⚙️ *Admin Command Center*\n` +
+            `──────────────────────────\n\n` +
+            `📊 *Reports*\n` +
+            `   *admin stats*\n` +
+            `   _View platform-wide analytics_\n\n` +
+            `📢 *Broadcast*\n` +
+            `   *admin broadcast Title | Message*\n` +
+            `   _Send a message to all active users_\n\n` +
+            `🚫 *Moderation*\n` +
+            `   *admin block <phone>*\n` +
+            `   _Suspend a user's access_\n\n` +
+            `   *admin unblock <phone>*\n` +
+            `   _Restore a user's access_\n\n` +
+            `──────────────────────────\n` +
+            `_🔒 Admin-only · These commands are private_`
         );
     }
 }
