@@ -11,7 +11,7 @@ export class MessageBuilder {
     static mainMenu(prefixText?: string): any {
         const bodyText = prefixText
             ? `${prefixText}\n\nWhat would you like to do next?`
-            : `🚀 *Match Network*\n\nYour professional network is one tap away.`;
+            : `🚀 *Match Network*\n\nYour professional network is one tap away. You can also chat with *Spark AI* anytime by typing below!`;
         return {
             type: 'list',
             text: bodyText,
@@ -30,6 +30,7 @@ export class MessageBuilder {
                     rows: [
                         { id: '4', title: '📅 Update Availability', description: 'Show if you\'re open to connect' },
                         { id: '5', title: '✨ Edit Profile',        description: 'Update your skills & info' },
+                        { id: '6', title: '🤖 Chat with Spark AI',  description: 'Ask career advice or networking tips' },
                     ]
                 }
             ]
@@ -281,5 +282,22 @@ export class MessageBuilder {
                 `📍 ${o.profile?.city || 'Unknown'} · ${o.profile?.experienceLevel || 'N/A'}`
             ).join('\n\n')
         );
+    }
+
+    // ── UTILS & FALLBACKS ─────────────────────────────────────────────────────
+    static unrecognizedType(): string {
+        return (
+            `⚠️ *Unsupported Message*\n\n` +
+            `I can only process text and menu selections right now.\n\n` +
+            `Please type *menu* to see all options.`
+        );
+    }
+
+    static matchAccepted(name: string): string {
+        return `🎉 *Connected!*\n\nYou're now connected with *${name}*. Check your network to see their details.`;
+    }
+
+    static matchDeclined(name: string): string {
+        return `✅ Request from *${name}* was declined.`;
     }
 }

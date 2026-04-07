@@ -2,7 +2,7 @@ import prisma from '../../shared/database/prisma';
 import redis from '../../shared/cache/redis';
 import { generateOtp, saveOtp, verifyOtp } from '../../shared/utils/otp';
 import { signAccessToken } from '../../shared/utils/jwt';
-import { sendTextMessage } from '../whatsapp/meta.client';
+import { smsService } from '../notifications/sms.service';
 import logger from '../../shared/logger';
 
 export class AuthService {
@@ -15,19 +15,13 @@ export class AuthService {
         logger.info({ phoneNumber, otp }, '📱 OTP generated');
         console.log(`\n🔐 OTP for ${phoneNumber}: ${otp}\n`);
 
-        // Send OTP via WhatsApp (gracefully skip if Meta API is not configured)
-        if (process.env.META_WA_TOKEN && process.env.META_WA_PHONE_NUMBER_ID) {
-            try {
-                await sendTextMessage(
-                    phoneNumber,
-                    `🔐 Your Match Network OTP is: *${otp}*\n\nThis code expires in 5 minutes. Do not share it with anyone.`
-                );
-                logger.info({ phoneNumber }, '✅ OTP sent via WhatsApp');
-            } catch (err) {
-                logger.warn({ phoneNumber }, '⚠️ WhatsApp OTP delivery failed — check Meta config. OTP is in server logs.');
-            }
+        // Send OTP via Standard SMS
+        const delivered = await smsService.sendOtp(phoneNumber, otp);
+
+        if (delivered) {
+            logger.info({ phoneNumber }, '✅ OTP sent via Standard SMS');
         } else {
-            logger.warn('META_WA_TOKEN or META_WA_PHONE_NUMBER_ID not set — OTP only in console (dev mode)');
+            logger.warn({ phoneNumber }, '⚠️ SMS delivery skipped or failed — OTP is in server logs (dev mode)');
         }
 
         return { message: 'OTP sent successfully' };

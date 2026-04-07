@@ -201,7 +201,8 @@ export class BotHandler {
             case '2': return this.showMyConnections(session);
             case '3': return this.showPendingRequests(session);
             case '4': return this.startUpdateAvailability(session);
-            case '5': return this.startEditProfile(session);  // ← NEW
+            case '5': return this.startEditProfile(session);
+            case '6': return this.startAiChat(session);  // ← NEW
             default:
                 if (session.userId) {
                     return this.handleAiChat(session, msg);
@@ -240,21 +241,14 @@ export class BotHandler {
     }
 
     private async handleProfileSkills(session: BotSession, msg: string): Promise<string | any> {
-        const names = msg.split(',').filter(s => s.trim().length > 0).map(s => s.trim());
+        const names = await skillsService.sanitizeSkills(msg);
 
         if (names.length === 0) {
             return (
-                `⚠️ *No Skills Entered*\n\n` +
-                `Please type at least one skill, separated by commas.\n\n` +
-                `_e.g. React, Node.js, Design_`
-            );
-        }
-
-        if (names.length > 10) {
-            return (
-                `⚠️ *Too Many Skills*\n\n` +
-                `You entered *${names.length} skills* but the maximum is *10*.\n\n` +
-                `Please narrow it down to your top skills and try again.`
+                `⚠️ *No Valid Skills Found*\n\n` +
+                `I couldn't identify any professional skills in your message.\n\n` +
+                `Please try again with clear skill names separated by commas.\n\n` +
+                `_e.g. React, Node.js, Project Management_`
             );
         }
 
@@ -325,6 +319,20 @@ export class BotHandler {
 
     // ── FIND MATCHES ──────────────────────────────────────────────────────────
     private async startFindMatches(session: BotSession): Promise<string | any> {
+        // Check if user has completed profile setup
+        const user = await prisma.user.findUnique({
+            where: { id: session.userId! },
+            include: { profile: true }
+        });
+
+        if (!user?.profile) {
+            return MessageBuilder.mainMenu(
+                `⚠️ *Profile Incomplete*\n\n` +
+                `You need to complete your profile before you can find matches.\n\n` +
+                `Tap *Edit Profile* (5) below to get started!`
+            );
+        }
+
         await sessionManager.patch(session.phoneNumber, {
             state: 'AWAITING_MATCH_SKILLS',
             tempData: { ...session.tempData },
@@ -334,12 +342,13 @@ export class BotHandler {
     }
 
     private async handleMatchSkillSelection(session: BotSession, msg: string): Promise<string | any> {
-        const names = msg.split(',').filter(s => s.trim().length > 0).map(s => s.trim());
+        const names = await skillsService.sanitizeSkills(msg);
 
         if (names.length === 0) {
             return (
-                `⚠️ *No Skills Entered*\n\n` +
-                `Type the skills you're looking for, separated by commas.\n\n` +
+                `⚠️ *No Valid Skills Found*\n\n` +
+                `I couldn't identify any professional skills in your message.\n\n` +
+                `Please type the skills you're looking for, separated by commas.\n\n` +
                 `_e.g. React, Marketing, Fundraising_`
             );
         }
@@ -383,6 +392,10 @@ export class BotHandler {
 
     private async handleConnectionNote(session: BotSession, msg: string): Promise<string> {
         const { matches, connectionType, selectedMatchIndex } = session.tempData ?? {};
+
+        if (!matches || matches.length === 0) {
+            return this.goToMenu(session);
+        }
 
         if (selectedMatchIndex === null || selectedMatchIndex === undefined) {
             if (msg === '0') return this.goToMenu(session);
@@ -478,8 +491,8 @@ export class BotHandler {
             });
 
             const reply = status === 'ACCEPTED'
-                ? `🎉 You're now connected with *${connection.requester.name}*!`
-                : `✅ Request from *${connection.requester.name}* declined.`;
+                ? MessageBuilder.matchAccepted(connection.requester.name)
+                : MessageBuilder.matchDeclined(connection.requester.name);
 
             return MessageBuilder.mainMenu(reply);
         }
@@ -540,14 +553,20 @@ export class BotHandler {
     private helpMessage(): any {
         return MessageBuilder.mainMenu(
             `ℹ️ *How to use Match Network*\n\n` +
-            `• *1–5* — Select a menu option\n` +
+            `• *1–6* — Select a menu option\n` +
             `• *menu* or *hi* — Return to main menu\n` +
             `• *0* or *cancel* — Exit any flow\n` +
             `• *help* — See this message\n\n` +
+            `🤖 *Spark AI Chat*:\n` +
+            `Just type any question below (e.g. "How do I improve my profile?") and Spark will help you out!\n\n` +
             `_All commands work from anywhere, anytime._`
         );
     }
     // ── AI CHAT ───────────────────────────────────────────────────────────────
+    private async startAiChat(session: BotSession): Promise<string> {
+        return this.handleAiChat(session, "Hi Spark! I want to start a chat and learn how you can help me with my career and networking.");
+    }
+
     private async handleAiChat(session: BotSession, msg: string): Promise<string> {
         try {
             const client = new Groq({ apiKey: process.env.GROQ_API_KEY });

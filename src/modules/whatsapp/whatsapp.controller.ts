@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { botHandler } from './bot.handler';
+import { MessageBuilder } from './message.builder';
 import { sendTextMessage, sendInteractiveList, sendInteractiveButtons, markReadAndTyping } from './meta.client';
 import { config } from '../../config';
 import logger from '../../shared/logger';
@@ -53,7 +54,7 @@ export class WhatsAppController {
             } else {
                 await sendTextMessage(
                     message.from,
-                    `Sorry, I can only process text and menu selections right now. Please type *menu* to start.`
+                    MessageBuilder.unrecognizedType()
                 );
                 return;
             }

@@ -12,4 +12,9 @@ export const config = {
     metaPhoneNumberId: process.env.META_WA_PHONE_NUMBER_ID ?? '',
     metaVerifyToken: process.env.META_WA_VERIFY_TOKEN ?? 'matchnetwork_verify',
     metaAppSecret: process.env.META_APP_SECRET ?? '',   // for payload verification later
+
+    // ── SMS (Generic HTTP Gateway) ────────────────────────
+    smsGatewayUrl: process.env.SMS_GATEWAY_URL ?? '',
+    smsApiKey: process.env.SMS_API_KEY ?? '',
+    smsSenderId: process.env.SMS_SENDER_ID ?? 'MATCHNET',
 };

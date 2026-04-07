@@ -7,6 +7,186 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id                  String         @id @default(uuid())
+  phoneNumber         String         @unique @map("phone_number")
+  whatsappId          String?        @unique @map("whatsapp_id")
+  name                String
+  email               String?        @unique
+  role                UserRole       @default(USER)
+  isVerified          Boolean        @default(false) @map("is_verified")
+  isActive            Boolean        @default(true) @map("is_active")
+  isPremium           Boolean        @default(false) @map("is_premium")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
+  botSessions         BotSession[]
+  receivedConnections Connection[]   @relation("Receiver")
+  sentConnections     Connection[]   @relation("Requester")
+  events              Event[]        @relation("EventCreator")
+  interests           Interest[]
+  notifications       Notification[]
+  profile             Profile?
+  ratingsReceived     Rating[]       @relation("Rated")
+  ratingsGiven        Rating[]       @relation("Rater")
+  subscription        Subscription?
+  userSkills          UserSkill[]
+
+  @@map("users")
+}
+
+model Profile {
+  id              String             @id @default(uuid())
+  userId          String             @unique @map("user_id")
+  bio             String?
+  location        String?
+  latitude        Float?
+  longitude       Float?
+  city            String?
+  country         String?
+  experienceLevel ExperienceLevel?   @map("experience_level")
+  avatarUrl       String?            @map("avatar_url")
+  reputationScore Int                @default(0) @map("reputation_score")
+  availability    AvailabilityStatus @default(AVAILABLE)
+  socialLinks     Json?              @map("social_links")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("profiles")
+}
+
+model Skill {
+  id         String      @id @default(uuid())
+  name       String      @unique
+  category   String
+  slug       String      @unique
+  userSkills UserSkill[]
+
+  @@map("skills")
+}
+
+model UserSkill {
+  id               String @id @default(uuid())
+  userId           String @map("user_id")
+  skillId          String @map("skill_id")
+  proficiencyLevel Int    @default(3) @map("proficiency_level")
+  skill            Skill  @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  user             User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, skillId])
+  @@map("user_skills")
+}
+
+model Interest {
+  id       String @id @default(uuid())
+  userId   String @map("user_id")
+  category String
+  value    String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("interests")
+}
+
+model Connection {
+  id             String           @id @default(uuid())
+  requesterId    String           @map("requester_id")
+  receiverId     String           @map("receiver_id")
+  status         ConnectionStatus @default(PENDING)
+  connectionType ConnectionType   @map("connection_type")
+  matchScore     Float?           @map("match_score")
+  note           String?
+  matchedAt      DateTime?        @map("matched_at")
+  respondedAt    DateTime?        @map("responded_at")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  receiver       User             @relation("Receiver", fields: [receiverId], references: [id])
+  requester      User             @relation("Requester", fields: [requesterId], references: [id])
+  ratings        Rating[]
+
+  @@map("connections")
+}
+
+model Rating {
+  id           String     @id @default(uuid())
+  raterId      String     @map("rater_id")
+  ratedUserId  String     @map("rated_user_id")
+  connectionId String     @map("connection_id")
+  score        Int
+  comment      String?
+  createdAt    DateTime   @default(now()) @map("created_at")
+  connection   Connection @relation(fields: [connectionId], references: [id])
+  ratedUser    User       @relation("Rated", fields: [ratedUserId], references: [id])
+  rater        User       @relation("Rater", fields: [raterId], references: [id])
+
+  @@map("ratings")
+}
+
+model Event {
+  id          String   @id @default(uuid())
+  creatorId   String   @map("creator_id")
+  title       String
+  description String?
+  eventType   String   @map("event_type")
+  startsAt    DateTime @map("starts_at")
+  endsAt      DateTime @map("ends_at")
+  location    String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  creator     User     @relation("EventCreator", fields: [creatorId], references: [id])
+
+  @@map("events")
+}
+
+model Subscription {
+  id               String           @id @default(uuid())
+  userId           String           @unique @map("user_id")
+  plan             SubscriptionPlan @default(FREE)
+  status           String           @default("active")
+  startsAt         DateTime         @default(now()) @map("starts_at")
+  expiresAt        DateTime?        @map("expires_at")
+  paymentGatewayId String?          @map("payment_gateway_id")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model Notification {
+  id        String              @id @default(uuid())
+  userId    String              @map("user_id")
+  channel   NotificationChannel
+  type      String
+  payload   Json
+  isSent    Boolean             @default(false) @map("is_sent")
+  sentAt    DateTime?           @map("sent_at")
+  createdAt DateTime            @default(now()) @map("created_at")
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model BotSession {
+  id           String   @id @default(uuid())
+  userId       String?  @map("user_id")
+  phoneNumber  String   @unique @map("phone_number")
+  currentState String   @default("IDLE") @map("current_state")
+  context      Json     @default("{}")
+  lastActivity DateTime @default(now()) @map("last_activity")
+  user         User?    @relation(fields: [userId], references: [id])
+
+  @@map("bot_sessions")
+}
+
+model BroadcastMessage {
+  id            String   @id @default(uuid())
+  adminId       String   @map("admin_id")
+  title         String
+  body          String
+  targetSegment String   @map("target_segment")
+  sentCount     Int      @default(0) @map("sent_count")
+  sentAt        DateTime @default(now()) @map("sent_at")
+
+  @@map("broadcast_messages")
+}
+
 enum UserRole {
   USER
   PREMIUM_USER
@@ -55,195 +235,4 @@ enum NotificationChannel {
   WHATSAPP
   EMAIL
   PUSH
-}
-
-model User {
-  id            String   @id @default(uuid())
-  phoneNumber   String   @unique @map("phone_number")
-  whatsappId    String?  @unique @map("whatsapp_id")
-  name          String
-  email         String?  @unique
-  role          UserRole @default(USER)
-  isVerified    Boolean  @default(false) @map("is_verified")
-  isActive      Boolean  @default(true) @map("is_active")
-  isPremium     Boolean  @default(false) @map("is_premium")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
-
-  profile       Profile?
-  userSkills    UserSkill[]
-  interests     Interest[]
-  sentConnections     Connection[] @relation("Requester")
-  receivedConnections Connection[] @relation("Receiver")
-  ratingsGiven  Rating[]    @relation("Rater")
-  ratingsReceived Rating[]  @relation("Rated")
-  notifications Notification[]
-  botSessions   BotSession[]
-  subscription  Subscription?
-  events        Event[]     @relation("EventCreator")
-
-  @@map("users")
-}
-
-model Profile {
-  id               String             @id @default(uuid())
-  userId           String             @unique @map("user_id")
-  bio              String?
-  location         String?
-  latitude         Float?
-  longitude        Float?
-  city             String?
-  country          String?
-  experienceLevel  ExperienceLevel?   @map("experience_level")
-  avatarUrl        String?            @map("avatar_url")
-  reputationScore  Int                @default(0) @map("reputation_score")
-  availability     AvailabilityStatus @default(AVAILABLE)
-  socialLinks      Json?              @map("social_links")
-  updatedAt        DateTime           @updatedAt @map("updated_at")
-
-  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("profiles")
-}
-
-model Skill {
-  id         String      @id @default(uuid())
-  name       String      @unique
-  category   String
-  slug       String      @unique
-  userSkills UserSkill[]
-
-  @@map("skills")
-}
-
-model UserSkill {
-  id               String @id @default(uuid())
-  userId           String @map("user_id")
-  skillId          String @map("skill_id")
-  proficiencyLevel Int    @default(3) @map("proficiency_level")
-
-  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, skillId])
-  @@map("user_skills")
-}
-
-model Interest {
-  id       String @id @default(uuid())
-  userId   String @map("user_id")
-  category String
-  value    String
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("interests")
-}
-
-model Connection {
-  id            String           @id @default(uuid())
-  requesterId   String           @map("requester_id")
-  receiverId    String           @map("receiver_id")
-  status        ConnectionStatus @default(PENDING)
-  connectionType ConnectionType  @map("connection_type")
-  matchScore    Float?           @map("match_score")
-  note          String?
-  matchedAt     DateTime?        @map("matched_at")
-  respondedAt   DateTime?        @map("responded_at")
-  createdAt     DateTime         @default(now()) @map("created_at")
-
-  requester User     @relation("Requester", fields: [requesterId], references: [id])
-  receiver  User     @relation("Receiver", fields: [receiverId], references: [id])
-  ratings   Rating[]
-
-  @@map("connections")
-}
-
-model Rating {
-  id           String   @id @default(uuid())
-  raterId      String   @map("rater_id")
-  ratedUserId  String   @map("rated_user_id")
-  connectionId String   @map("connection_id")
-  score        Int
-  comment      String?
-  createdAt    DateTime @default(now()) @map("created_at")
-
-  rater      User       @relation("Rater", fields: [raterId], references: [id])
-  ratedUser  User       @relation("Rated", fields: [ratedUserId], references: [id])
-  connection Connection @relation(fields: [connectionId], references: [id])
-
-  @@map("ratings")
-}
-
-model Event {
-  id          String   @id @default(uuid())
-  creatorId   String   @map("creator_id")
-  title       String
-  description String?
-  eventType   String   @map("event_type")
-  startsAt    DateTime @map("starts_at")
-  endsAt      DateTime @map("ends_at")
-  location    String?
-  isActive    Boolean  @default(true) @map("is_active")
-  createdAt   DateTime @default(now()) @map("created_at")
-
-  creator User @relation("EventCreator", fields: [creatorId], references: [id])
-
-  @@map("events")
-}
-
-model Subscription {
-  id               String           @id @default(uuid())
-  userId           String           @unique @map("user_id")
-  plan             SubscriptionPlan @default(FREE)
-  status           String           @default("active")
-  startsAt         DateTime         @default(now()) @map("starts_at")
-  expiresAt        DateTime?        @map("expires_at")
-  paymentGatewayId String?          @map("payment_gateway_id")
-  createdAt        DateTime         @default(now()) @map("created_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("subscriptions")
-}
-
-model Notification {
-  id        String              @id @default(uuid())
-  userId    String              @map("user_id")
-  channel   NotificationChannel
-  type      String
-  payload   Json
-  isSent    Boolean             @default(false) @map("is_sent")
-  sentAt    DateTime?           @map("sent_at")
-  createdAt DateTime            @default(now()) @map("created_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("notifications")
-}
-
-model BotSession {
-  id           String   @id @default(uuid())
-  userId       String?  @map("user_id")
-  phoneNumber  String   @map("phone_number")
-  currentState String   @default("IDLE") @map("current_state")
-  context      Json     @default("{}")
-  lastActivity DateTime @default(now()) @map("last_activity")
-
-  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  @@unique([phoneNumber])
-  @@map("bot_sessions")
-}
-
-model BroadcastMessage {
-  id            String   @id @default(uuid())
-  adminId       String   @map("admin_id")
-  title         String
-  body          String
-  targetSegment String   @map("target_segment")
-  sentCount     Int      @default(0) @map("sent_count")
-  sentAt        DateTime @default(now()) @map("sent_at")
-
-  @@map("broadcast_messages")
 }
