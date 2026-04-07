@@ -5,6 +5,9 @@ import { matchingService } from '../matching/matching.service';
 import { skillsService } from '../skills/skills.service';
 import { userService } from '../users/user.service';
 import { authService } from '../auth/auth.service';
+import { notificationService } from '../notifications/notification.service';
+import { chatService } from '../chat/chat.service';
+import { teammateService } from '../teammate/teammate.service';
 import logger from '../../shared/logger';
 import Groq from 'groq-sdk';
 const CONNECTION_TYPE_MAP: Record<string, string> = {
@@ -108,6 +111,15 @@ export class BotHandler {
             case 'PROFILE_SETUP_SKILLS': return this.handleProfileSkills(session, msg);
             case 'PROFILE_SETUP_LOCATION': return this.handleProfileLocation(session, msg);
             case 'PROFILE_SETUP_AVAILABILITY': return this.handleProfileAvailability(session, msg);
+            case 'AWAITING_CONNECTION_ACTION_PICK': return this.handleConnectionActionPick(session, msg);
+            case 'AWAITING_CONNECTION_ACTION': return this.handleConnectionAction(session, msg);
+            case 'AWAITING_RESPOND_MESSAGE': return this.handleRespondMessage(session, msg);
+            case 'TEAMMATE_HUB': return this.handleTeammateAction(session, msg);
+            case 'TEAMMATE_POST_TITLE': return this.handleTeammatePostTitle(session, msg);
+            case 'TEAMMATE_POST_DESC': return this.handleTeammatePostDesc(session, msg);
+            case 'TEAMMATE_BROWSE_PICK': return this.handleTeammateBrowsePick(session, msg);
+            case 'TEAMMATE_DETAIL_ACTION': return this.handleTeammateDetailAction(session, msg);
+            case 'CHATTING': return this.handleChat(session, msg);
             default: return this.goToMenu(session);
         }
     }
@@ -202,7 +214,8 @@ export class BotHandler {
             case '3': return this.showPendingRequests(session);
             case '4': return this.startUpdateAvailability(session);
             case '5': return this.startEditProfile(session);
-            case '6': return this.startAiChat(session);  // ← NEW
+            case '6': return this.startTeammateHub(session);
+            case '7': return this.startAiChat(session);
             default:
                 if (session.userId) {
                     return this.handleAiChat(session, msg);
@@ -446,7 +459,121 @@ export class BotHandler {
     // ── MY CONNECTIONS ────────────────────────────────────────────────────────
     private async showMyConnections(session: BotSession): Promise<string | any> {
         const connections = await matchingService.getMyConnections(session.userId!);
+
+        if (connections.length === 0) return MessageBuilder.myConnections([], session.userId!);
+
+        await sessionManager.patch(session.phoneNumber, {
+            state: 'AWAITING_CONNECTION_ACTION_PICK',
+            tempData: { ...session.tempData, connections },
+        });
+
         return MessageBuilder.myConnections(connections, session.userId!);
+    }
+
+    private async handleConnectionActionPick(session: BotSession, msg: string): Promise<string | any> {
+        if (msg === '0') return this.goToMenu(session);
+
+        const { connections } = session.tempData ?? {};
+        if (!connections || connections.length === 0) return this.goToMenu(session);
+
+        const idx = parseInt(msg, 10) - 1;
+        if (isNaN(idx) || idx < 0 || idx >= connections.length) {
+            return (
+                `⚠️ *Invalid Selection*\n\n` +
+                `Please reply with a number *1–${connections.length}* to manage a connection.\n\n` +
+                `_Or type *0* to return to the menu._`
+            );
+        }
+
+        const picked = connections[idx];
+        const other = picked.requesterId === session.userId ? picked.receiver : picked.requester;
+
+        await sessionManager.patch(session.phoneNumber, {
+            state: 'AWAITING_CONNECTION_ACTION',
+            tempData: { ...session.tempData, selectedConnection: picked, otherUser: other },
+        });
+
+        return MessageBuilder.connectionActions(other.name);
+    }
+
+    private async handleConnectionAction(session: BotSession, msg: string): Promise<string | any> {
+        if (msg === '0' || msg === 'back') return this.showMyConnections(session);
+
+        const { selectedConnection, otherUser } = session.tempData ?? {};
+        if (!selectedConnection || !otherUser) return this.goToMenu(session);
+
+        switch (msg) {
+            case '1': // Message
+                return this.startChat(session, otherUser.id);
+
+            case '2': // View Profile
+                return MessageBuilder.publicProfile(otherUser);
+
+            case '3': // Remove
+                await matchingService.removeConnection(selectedConnection.id, session.userId!);
+                return MessageBuilder.mainMenu(
+                    `✅ *Connection Removed*\n\n` +
+                    `*${otherUser.name}* has been removed from your network.`
+                );
+
+            default:
+                return MessageBuilder.connectionActions(otherUser.name);
+        }
+    }
+
+    private async startChat(session: BotSession, targetUserId: string): Promise<string | any> {
+        const targetUser = await prisma.user.findUnique({
+            where: { id: targetUserId },
+            include: { profile: true }
+        });
+
+        if (!targetUser) return this.goToMenu(session);
+
+        const status = await chatService.getOnlineStatus(targetUserId);
+
+        await sessionManager.patch(session.phoneNumber, {
+            state: 'CHATTING',
+            tempData: {
+                ...session.tempData,
+                chatTargetId: targetUserId,
+                chatTargetName: targetUser.name,
+                chatTargetPhone: targetUser.phoneNumber
+            }
+        });
+
+        return MessageBuilder.chatHeader(targetUser.name, status);
+    }
+
+    private async handleChat(session: BotSession, msg: string): Promise<string | any> {
+        const { chatTargetId, chatTargetName, chatTargetPhone } = session.tempData ?? {};
+
+        if (msg === '0' || msg.toLowerCase() === 'exit') {
+            await sessionManager.patch(session.phoneNumber, { state: 'MAIN_MENU' });
+            return this.showMyConnections(session);
+        }
+
+        // Save message
+        await chatService.sendMessage({
+            senderId: session.userId!,
+            receiverId: chatTargetId,
+            body: msg
+        });
+
+        // Check if target is a currently in a chat with THIS user
+        const targetSession = await sessionManager.get(chatTargetPhone);
+        const isTargetInChatWithMe =
+            targetSession?.state === 'CHATTING' &&
+            targetSession?.tempData?.chatTargetId === session.userId;
+
+        if (isTargetInChatWithMe) {
+            // Direct delivery
+            await notificationService.notifyChatMessage(chatTargetPhone, session.tempData?.userName || 'Connection', msg, true);
+        } else {
+            // Background notification
+            await notificationService.notifyChatMessage(chatTargetPhone, session.tempData?.userName || 'Connection', msg, false);
+        }
+
+        return `✅ _Delivered_`;
     }
 
     // ── PENDING REQUESTS ──────────────────────────────────────────────────────
@@ -468,33 +595,43 @@ export class BotHandler {
 
         const { pendingRequests, selectedRequestIndex } = session.tempData ?? {};
 
-        // ── STEP 2: user already picked a request, now 1=accept or 2=reject ──
+        // ── STEP 2: Response actions for picked request ───────────────────────
         if (selectedRequestIndex !== undefined && selectedRequestIndex !== null) {
-            if (msg !== '1' && msg !== '2') {
-                return (
-                    `⚠️ *Invalid Response*\n\n` +
-                    `Please reply with:\n` +
-                    `*1* ✅  Accept request\n` +
-                    `*2* ❌  Decline request\n\n` +
-                    `_Or type *0* to return to the menu._`
-                );
+            const picked = pendingRequests[selectedRequestIndex];
+
+            switch (msg) {
+                case '1': // Accept
+                    await matchingService.respondToConnection(picked.id, session.userId!, 'ACCEPTED');
+                    await sessionManager.patch(session.phoneNumber, { state: 'MAIN_MENU', tempData: {} });
+                    return MessageBuilder.mainMenu(MessageBuilder.matchAccepted(picked.requester.name));
+
+                case '2': // Reject
+                    await matchingService.respondToConnection(picked.id, session.userId!, 'REJECTED');
+                    await sessionManager.patch(session.phoneNumber, { state: 'MAIN_MENU', tempData: {} });
+                    return MessageBuilder.mainMenu(MessageBuilder.matchDeclined(picked.requester.name));
+
+                case '3': // Reply
+                    await sessionManager.patch(session.phoneNumber, { state: 'AWAITING_RESPOND_MESSAGE' });
+                    return (
+                        `💬 *Reply to ${picked.requester.name}*\n\n` +
+                        `Type your message below. It will be sent to them via WhatsApp.\n\n` +
+                        `_Type *back* to return to options._`
+                    );
+
+                case '4': // View Profile
+                    return MessageBuilder.publicProfile(picked.requester);
+
+                case 'back':
+                case '0':
+                    // Reset selected request and show list again
+                    await sessionManager.patch(session.phoneNumber, { 
+                        tempData: { ...session.tempData, selectedRequestIndex: null } 
+                    });
+                    return this.showPendingRequests(session);
+
+                default:
+                    return MessageBuilder.requestActionOptions(picked.requester.name);
             }
-
-            const connection = pendingRequests[selectedRequestIndex];
-            const status = msg === '1' ? 'ACCEPTED' : 'REJECTED';
-
-            await matchingService.respondToConnection(connection.id, session.userId!, status);
-
-            await sessionManager.patch(session.phoneNumber, {
-                state: 'MAIN_MENU',
-                tempData: {},
-            });
-
-            const reply = status === 'ACCEPTED'
-                ? MessageBuilder.matchAccepted(connection.requester.name)
-                : MessageBuilder.matchDeclined(connection.requester.name);
-
-            return MessageBuilder.mainMenu(reply);
         }
 
         // ── STEP 1: pick which request to respond to ──────────────────────────
@@ -502,27 +639,41 @@ export class BotHandler {
         if (isNaN(idx) || idx < 0 || idx >= pendingRequests.length) {
             return (
                 `⚠️ *Invalid Selection*\n\n` +
-                `Please reply with a number *1–${pendingRequests.length}* to choose a request.\n\n` +
+                `Please reply with a number *1–${pendingRequests.length}* to pick a request.\n\n` +
                 `_Or type *0* to return to the menu._`
             );
         }
 
+        const picked = pendingRequests[idx];
         await sessionManager.patch(session.phoneNumber, {
             tempData: { ...session.tempData, selectedRequestIndex: idx },
         });
 
-        const picked = pendingRequests[idx];
+        return MessageBuilder.requestActionOptions(picked.requester.name);
+    }
+
+    private async handleRespondMessage(session: BotSession, msg: string): Promise<string | any> {
+        const { pendingRequests, selectedRequestIndex } = session.tempData ?? {};
+        const picked = pendingRequests[selectedRequestIndex];
+
+        if (msg.toLowerCase() === 'back') {
+            await sessionManager.patch(session.phoneNumber, { state: 'AWAITING_RESPOND_CHOICE' });
+            return MessageBuilder.requestActionOptions(picked.requester.name);
+        }
+
+        // Send WhatsApp reply
+        await notificationService.notifyReplyReceived(
+            picked.requester.phoneNumber,
+            session.tempData?.userName || 'A Match Network user',
+            msg
+        );
+
+        await sessionManager.patch(session.phoneNumber, { state: 'AWAITING_RESPOND_CHOICE' });
+
         return (
-            `📬 *Request Selected*\n` +
-            `──────────────────────────\n\n` +
-            `👤 *${picked.requester.name}* wants to connect.\n` +
-            `📍 ${picked.requester.profile?.city || 'Location unknown'}\n` +
-            `💬 _"${picked.note || 'No message attached'}"_\n\n` +
-            `How would you like to respond?\n\n` +
-            `*1* ✅  Accept request\n` +
-            `*2* ❌  Decline request\n\n` +
-            `──────────────────────────\n` +
-            `_Or type *0* to go back to menu_`
+            `✅ *Message Sent*\n\n` +
+            `Your message has been delivered to *${picked.requester.name}*.\n\n` +
+            MessageBuilder.requestActionOptions(picked.requester.name).text
         );
     }
 
@@ -571,22 +722,28 @@ export class BotHandler {
         try {
             const client = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-            // Get user context for personalized responses
-            const user = await prisma.user.findUnique({
-                where: { id: session.userId! },
-                include: {
-                    profile: true,
-                    userSkills: { include: { skill: true } },
-                },
-            });
+            // ── NEW: Real Platform Context ─────────────────────────────────────────
+            const [user, topMembers] = await Promise.all([
+                prisma.user.findUnique({
+                    where: { id: session.userId! },
+                    include: {
+                        profile: true,
+                        userSkills: { include: { skill: true } },
+                    },
+                }),
+                matchingService.getSparkRecommendations(session.userId!)
+            ]);
 
             const userContext = user
                 ? `Name: ${user.name}, ` +
                 `Skills: ${user.userSkills.map(s => s.skill.name).join(', ') || 'none set'}, ` +
                 `Experience: ${user.profile?.experienceLevel || 'not set'}, ` +
-                `City: ${user.profile?.city || 'not set'}, ` +
-                `Availability: ${user.profile?.availability || 'not set'}`
+                `City: ${user.profile?.city || 'not set'}`
                 : 'New user';
+
+            const communityContext = topMembers.length > 0
+                ? topMembers.map(m => `• ${m.name} (${m.city}) - Skills: ${m.skills.join(', ')}`).join('\n')
+                : 'Searching for top builders...';
 
             const response = await client.chat.completions.create({
                 model: 'llama-3.3-70b-versatile',
@@ -594,33 +751,35 @@ export class BotHandler {
                 messages: [
                     {
                         role: 'system',
-                        content: `You are Spark, the AI assistant for Match Network — a WhatsApp-based professional networking platform for builders, founders, and collaborators.
+                        content: `You are Spark, the Networking Concierge for Match Network — a professional platform on WhatsApp.
+                        
+Your goal: Help users connect, collaborate, and grow their professional network. Be proactive, results-oriented, and encouraging.
 
-Current user: ${userContext}
+USER CONTEXT:
+${userContext}
 
-Platform actions:
-- Tap *1* → Find matches by skill
-- Tap *2* → View my connections
-- Tap *3* → Respond to pending requests
+LIVE COMMUNITY SNEAK PEEK (PEOPLE THE USER SHOULD MEET):
+${communityContext}
+
+PLATFORM ACTIONS:
+- Tap *1* → Search for people with specific skills
+- Tap *2* → Manage your network connections
+- Tap *3* → View pending requests
 - Tap *4* → Update availability
-- Tap *5* → Edit my profile
-- Type *menu* → Return to main menu
-- Type *help* → Get help
+- Tap *5* → Edit profile
 
-Matching algorithm weights: Skill similarity (35%), Location (20%), Experience (15%), Reputation (15%), Availability (10%), Interests (5%).
+YOUR EXTENDED CAPABILITIES:
+1. **Suggest Connections**: Proactively suggest meeting the real people listed in the "COMMUNITY SNEAK PEEK". Mention them by name.
+2. **Icebreaker Generation**: If a user asks how to connect, write 2 tailored message templates for them. One professional, one casual.
+3. **Outreach Assistance**: Help users draft messages for specific roles (e.g. "Draft a message for a senior dev").
+4. **Strategy Advice**: Suggest which skills to add or how to improve their bio based on their background.
 
-You help users with: networking tips, writing strong profiles, choosing relevant skills, explaining how matching works, career advice, collaboration strategies.
-
-STRICT FORMATTING RULES — follow every rule without exception:
-1. Always use WhatsApp markdown: *bold* for key terms, _italic_ for examples/quotes
-2. Use relevant emojis naturally (1-2 per paragraph max)
-3. Keep replies under 180 words — be concise and high-value
-4. Start every response with a 1-line summary sentence
-5. Use bullet points (•) for lists, never numbered lists
-6. If the user wants to perform an action, tell them exactly which option to tap
-7. Never fabricate features that don't exist on the platform
-8. End with a brief encouragement or next-step nudge
-9. Respond in the same language the user writes in`,
+STRICT FORMATTING RULES:
+1. Use WhatsApp markdown: *bold* for emphasis, _italic_ for quotes/examples.
+2. Emojis: Use 1-2 per paragraph to keep it friendly.
+3. Length: Keep overall response under 220 words.
+4. Actionable: Always tell the user exactly which button (1-5) to tap to find those types of people. 
+5. Language: Respond in the same language as the user.`,
                     },
                     {
                         role: 'user',
@@ -757,6 +916,150 @@ STRICT FORMATTING RULES — follow every rule without exception:
             `_🔒 Admin-only · These commands are private_`
         );
     }
+
+    // ── TEAMMATES ─────────────────────────────────────────────────────────────
+    private async startTeammateHub(session: BotSession): Promise<any> {
+        await sessionManager.patch(session.phoneNumber, { state: 'TEAMMATE_HUB' });
+        return MessageBuilder.teammateHub();
+    }
+
+    private async handleTeammateAction(session: BotSession, msg: string): Promise<any> {
+        if (msg === '0') return this.goToMenu(session);
+
+        const choice = msg.toLowerCase();
+        if (choice === 'team_browse' || choice === '1') return this.browseTeammateRequests(session);
+        if (choice === 'team_post' || choice === '2') return this.startTeammatePost(session);
+        if (choice === 'team_my' || choice === '3') return this.showMyTeammatePosts(session);
+
+        return MessageBuilder.teammateHub();
+    }
+
+    private async startTeammatePost(session: BotSession): Promise<any> {
+        await sessionManager.patch(session.phoneNumber, { state: 'TEAMMATE_POST_TITLE' });
+        return `📢 *Let's find you a team!*\n\nWhat is your project's *Title*?\n_Example: "Frontend dev for Hackathon" or "AI Startup Co-founder"_`;
+    }
+
+    private async handleTeammatePostTitle(session: BotSession, msg: string): Promise<any> {
+        if (msg === '0') return this.startTeammateHub(session);
+
+        await sessionManager.patch(session.phoneNumber, {
+            state: 'TEAMMATE_POST_DESC',
+            tempData: { ...session.tempData, projectTitle: msg }
+        });
+
+        return `✅ *Title saved.*\n\nNow, describe the project and what you're looking for:\n_Mention stack, commitment, and goals._`;
+    }
+
+    private async handleTeammatePostDesc(session: BotSession, msg: string): Promise<any> {
+        if (msg === '0') return this.startTeammateHub(session);
+
+        await sessionManager.patch(session.phoneNumber, {
+            state: 'TEAMMATE_POST_SKILLS',
+            tempData: { ...session.tempData, projectDesc: msg }
+        });
+
+        return `✅ *Description saved.*\n\nList the *Required Skills* (comma separated):\n_Example: React, Node.js, UI Design_`;
+    }
+
+    private async handleTeammatePostSkills(session: BotSession, msg: string): Promise<any> {
+        if (msg === '0') return this.startTeammateHub(session);
+
+        const skills = await skillsService.sanitizeSkills(msg);
+        const { projectTitle, projectDesc } = session.tempData ?? {};
+
+        await teammateService.createRequest({
+            creatorId: session.userId!,
+            title: projectTitle,
+            description: projectDesc,
+            requiredSkills: skills
+        });
+
+        await sessionManager.patch(session.phoneNumber, { state: 'TEAMMATE_HUB' });
+        return MessageBuilder.mainMenu(`🎉 *Project Posted Successfully!*\n\nOther builders can now see your request and apply.`);
+    }
+
+    private async browseTeammateRequests(session: BotSession): Promise<any> {
+        const requests = await teammateService.getActiveRequests();
+        const user = await prisma.user.findUnique({
+            where: { id: session.userId },
+            include: { userSkills: { include: { skill: true } } }
+        });
+
+        const userSkills = user?.userSkills.map(s => s.skill.name) || [];
+
+        await sessionManager.patch(session.phoneNumber, {
+            state: 'TEAMMATE_BROWSE_PICK',
+            tempData: { ...session.tempData, browsedRequests: requests }
+        });
+
+        return MessageBuilder.teammateList(requests, userSkills);
+    }
+
+    private async handleTeammateBrowsePick(session: BotSession, msg: string): Promise<any> {
+        if (msg === '0') return this.startTeammateHub(session);
+
+        const requests = session.tempData?.browsedRequests || [];
+        const index = parseInt(msg.replace('req_', '')) || parseInt(msg) - 1;
+
+        const req = requests[index];
+        if (!req) return this.browseTeammateRequests(session);
+
+        // Fetch full detail
+        const fullReq = await teammateService.getRequestById(req.id);
+        if (!fullReq) return this.browseTeammateRequests(session);
+
+        await sessionManager.patch(session.phoneNumber, {
+            state: 'TEAMMATE_DETAIL_ACTION',
+            tempData: { ...session.tempData, selectedProjectId: req.id, posterId: fullReq.creatorId }
+        });
+
+        return MessageBuilder.teammateDetail(fullReq, fullReq.creatorId === session.userId);
+    }
+
+    private async handleTeammateDetailAction(session: BotSession, msg: string): Promise<any> {
+        const { selectedProjectId, posterId } = session.tempData ?? {};
+
+        if (msg === 'team_browse' || msg === 'back') return this.browseTeammateRequests(session);
+
+        if (msg === 'req_apply' || msg === '1') {
+            await teammateService.applyToRequest(selectedProjectId, session.userId!);
+            
+            // Notify Poster
+            const poster = await prisma.user.findUnique({ where: { id: posterId } });
+            if (poster) {
+                await notificationService.notifyTeammateApplication(
+                    poster.phoneNumber,
+                    session.tempData?.userName || 'A builder',
+                    "Interested in your project!"
+                );
+            }
+            return `✅ *Application Sent!*\n\nThe poster has been notified. They can start a chat with you if interested.`;
+        }
+
+        if (msg === 'req_chat' || msg === '2') {
+            return this.startChat(session, posterId);
+        }
+
+        if (msg === 'req_close' && posterId === session.userId) {
+            await teammateService.closeRequest(selectedProjectId, session.userId!);
+            return MessageBuilder.mainMenu(`✅ *Project Closed.*\n\nYour post is no longer visible to other builders.`);
+        }
+
+        return this.browseTeammateRequests(session);
+    }
+
+    private async showMyTeammatePosts(session: BotSession): Promise<any> {
+        const all = await teammateService.getActiveRequests();
+        const myPosts = all.filter(r => r.creatorId === session.userId);
+
+        await sessionManager.patch(session.phoneNumber, {
+            state: 'TEAMMATE_BROWSE_PICK',
+            tempData: { ...session.tempData, browsedRequests: myPosts }
+        });
+
+        return MessageBuilder.teammateList(myPosts, []);
+    }
+
 }
 
 export const botHandler = new BotHandler();

@@ -189,6 +189,8 @@ export class MessageBuilder {
 
     // ── MATCH RESULTS — Interactive List ─────────────────────────────────────
     static matchResults(matches: any[]): any {
+        const isSuggestion = matches.length > 0 && matches[0].isSuggestion;
+
         if (matches.length === 0) {
             return this.mainMenu(`😔 *No matches found* for those skills right now.\n\nTry broader or different skills.`);
         }
@@ -201,26 +203,32 @@ export class MessageBuilder {
 
         rows.push({ id: '0', title: '↩ Back to Menu', description: 'Return to main menu' });
 
+        const header = isSuggestion
+            ? `🌟 *Suggested Professionals for You*\n\n` +
+              `_No exact skill matches found, but these top members are near you or have similar backgrounds:_`
+            : `🎯 *${matches.length} Match${matches.length > 1 ? 'es' : ''} Found!*\n\n`;
+
         return {
             type: 'list',
             text: (
-                `🎯 *${matches.length} Match${matches.length > 1 ? 'es' : ''} Found!*\n\n` +
+                header +
                 matches.map((m, i) =>
                     `*${i + 1}. ${m.name}*\n` +
                     `📍 ${m.city || 'Remote'} · ⚡ ${Math.round(m.matchScore * 100)}% match\n` +
-                    `🛠 ${m.matchingSkills.join(', ')}`
+                    (m.matchingSkills.length > 0 ? `🛠 ${m.matchingSkills.join(', ')}` : '')
                 ).join('\n\n') +
                 `\n\nSelect a profile below to send a connection request.`
             ),
-            buttonText: 'View Matches',
+            buttonText: isSuggestion ? 'See Suggestions' : 'View Matches',
             sections: [
                 {
-                    title: 'Select a Match',
+                    title: isSuggestion ? 'Suggested Connections' : 'Top Matches',
                     rows
                 }
             ]
         };
     }
+
 
     // ── CONNECTION SENT ───────────────────────────────────────────────────────
     static connectionSent(name: string): any {
@@ -265,22 +273,95 @@ export class MessageBuilder {
         };
     }
 
+    static requestActionOptions(name: string): any {
+        return {
+            type: 'list',
+            text: (
+                `📬 *Manage Request from: ${name}*\n\n` +
+                `What would you like to do?`
+            ),
+            buttonText: 'Select Response',
+            sections: [
+                {
+                    title: 'Actions',
+                    rows: [
+                        { id: '1', title: '✅ Accept',       description: 'Connect and exchange contacts' },
+                        { id: '2', title: '❌ Reject',       description: 'Politely decline' },
+                        { id: '3', title: '💬 Reply',        description: 'Send a message before deciding' },
+                        { id: '4', title: '👤 View Profile', description: 'Check skills and background' },
+                        { id: '0', title: '↩ Back',         description: 'Back to requests list' },
+                    ]
+                }
+            ]
+        };
+    }
+
+
     // ── MY CONNECTIONS ────────────────────────────────────────────────────────
     static myConnections(connections: any[], userId: string): any {
         if (connections.length === 0) {
             return this.mainMenu(`🕸 *No Connections Yet*\n\nStart finding matches to grow your professional network!`);
         }
 
-        const others = connections.map(c =>
-            c.requesterId === userId ? c.receiver : c.requester
-        );
+        const rows = connections.map((c, i) => {
+            const other = c.requesterId === userId ? c.receiver : c.requester;
+            return {
+                id: String(i + 1),
+                title: other.name,
+                description: `${other.profile?.city || 'Unknown'} · Manage connection`
+            };
+        });
+        rows.push({ id: '0', title: '↩ Back to Menu', description: 'Return to main menu' });
 
-        return this.mainMenu(
-            `🌐 *Your Network (${connections.length})*\n\n` +
-            others.map((o, i) =>
-                `*${i + 1}. ${o.name}*\n` +
-                `📍 ${o.profile?.city || 'Unknown'} · ${o.profile?.experienceLevel || 'N/A'}`
-            ).join('\n\n')
+        return {
+            type: 'list',
+            text: `🌐 *Your Network (${connections.length})*\n\nSelect a person below to view their profile, message them, or manage the connection.`,
+            buttonText: 'View Network',
+            sections: [
+                {
+                    title: 'Your Professional Network',
+                    rows
+                }
+            ]
+        };
+    }
+
+    static connectionActions(name: string): any {
+        return {
+            type: 'list',
+            text: (
+                `🤝 *Manage Connection: ${name}*\n\n` +
+                `What would you like to do with this connection?`
+            ),
+            buttonText: 'Select Action',
+            sections: [
+                {
+                    title: 'Actions',
+                    rows: [
+                        { id: '1', title: '💬 Message',      description: 'Open direct WhatsApp chat' },
+                        { id: '2', title: '👤 View Profile', description: 'See full professional info' },
+                        { id: '3', title: '❌ Remove',       description: 'Remove from your network' },
+                        { id: '0', title: '↩ Back',         description: 'Back to connections list' },
+                    ]
+                }
+            ]
+        };
+    }
+
+    static publicProfile(user: any): string {
+        const p = user.profile;
+        const skills = user.userSkills?.map((s: any) => s.skill.name).join(', ') || 'None listed';
+
+        return (
+            `👤 *${user.name}*\n` +
+            `──────────────────────────\n\n` +
+            `📝 *Bio*\n${p?.bio || '_No bio provided._'}\n\n` +
+            `🛠 *Skills*\n${skills}\n\n` +
+            `💼 *Experience*\n${p?.experienceLevel || 'N/A'}\n\n` +
+            `📍 *Location*\n${p?.city || 'Unknown'}\n\n` +
+            `🕘 *Availability*\n${p?.availability || 'AVAILABLE'}\n\n` +
+            `──────────────────────────\n` +
+            `_Type *back* to return to connections._`
         );
     }
 
@@ -299,5 +380,108 @@ export class MessageBuilder {
 
     static matchDeclined(name: string): string {
         return `✅ Request from *${name}* was declined.`;
+    }
+
+    // ── CHAT ──────────────────────────────────────────────────────────────────
+    static chatHeader(name: string, status: 'ONLINE' | 'OFFLINE'): string {
+        const dot = status === 'ONLINE' ? '🟢' : '⚪';
+        return (
+            `💬 *Chatting with ${name}* ${dot} _${status}_\n` +
+            `──────────────────────────\n` +
+            `_Check status and exchange details directly. Type *0* to exit chat._\n\n`
+        );
+    }
+
+    static incomingMessage(sender: string, text: string): string {
+        return (
+            `📩 *New message from ${sender}*:\n` +
+            `"${text}"\n\n` +
+            `_Reply to them via your connections menu._`
+        );
+    }
+
+    // ── TEAMMATES ─────────────────────────────────────────────────────────────
+    static teammateHub(): any {
+        return {
+            type: 'list',
+            text: (
+                `🧑🤝🧑 *Find Teammates & Collaborators*\n\n` +
+                `Looking for a co-founder? Need a dev for a hackathon? Or just want to join a cool project?\n\n` +
+                `Select an option below to get started.`
+            ),
+            buttonText: 'Teammate Options',
+            sections: [
+                {
+                    title: 'Teammates',
+                    rows: [
+                        { id: 'team_browse', title: '🔍 Browse Requests', description: 'See projects looking for teammates' },
+                        { id: 'team_post', title: '📢 Post a Request', description: 'Find teammates for your project' },
+                        { id: 'team_my', title: '📋 My Posts', description: 'Manage your active requests' },
+                        { id: '0', title: '↩ Main Menu', description: 'Go back' }
+                    ]
+                }
+            ]
+        };
+    }
+
+    static teammateList(requests: any[], userSkills: string[]): any {
+        if (requests.length === 0) {
+            return {
+                type: 'buttons',
+                text: `😔 *No active teammate requests found.*\n\nBe the first to post one!`,
+                buttons: [{ id: 'team_post', title: '📢 Post Now' }, { id: '0', title: '↩ Menu' }]
+            };
+        }
+
+        const rows = requests.map((req, i) => {
+            const hasMatch = req.requiredSkills.some((s: string) => userSkills.includes(s));
+            return {
+                id: `req_${i}`,
+                title: (hasMatch ? '🔥 ' : '') + req.title,
+                description: `${req.creator.name} · ${req.creator.profile?.city || 'Remote'} · ${req._count.applications} apps`
+            };
+        });
+
+        rows.push({ id: '0', title: '↩ Back', description: 'Return to Hub' });
+
+        return {
+            type: 'list',
+            text: (
+                `🔍 *Active Collaboration Requests*\n\n` +
+                `Projects marked with 🔥 match your skills.\n\n` +
+                requests.map((req, i) =>
+                    `*${i + 1}. ${req.title}*\n` +
+                    `🛠 ${req.requiredSkills.join(', ')}\n` +
+                    `👤 ${req.creator.name} · 📍 ${req.creator.profile?.city || 'Remote'}`
+                ).join('\n\n')
+            ),
+            buttonText: 'View Projects',
+            sections: [{ title: 'Available Projects', rows }]
+        };
+    }
+
+    static teammateDetail(req: any, isOwner: boolean): any {
+        const text = (
+            `📢 *${req.title}*\n` +
+            `──────────────────────────\n\n` +
+            `${req.description}\n\n` +
+            `🛠 *Required Skills:* ${req.requiredSkills.join(', ')}\n` +
+            `👤 *Posted by:* ${req.creator.name}\n` +
+            `📍 *Location:* ${req.creator.profile?.city || 'Remote'}\n\n` +
+            (isOwner ? `_This is YOUR post. You can close it below._` : `_Interested? Apply now or chat with the poster._`)
+        );
+
+        const buttons = isOwner
+            ? [{ id: 'req_close', title: '🚫 Close Request' }]
+            : [
+                { id: 'req_apply', title: '✅ Apply/Join' },
+                { id: 'req_chat', title: '💬 Chat with Poster' }
+            ];
+
+        return {
+            type: 'buttons',
+            text,
+            buttons: [...buttons, { id: 'team_browse', title: '↩ Back' }]
+        };
     }
 }

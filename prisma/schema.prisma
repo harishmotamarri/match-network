@@ -30,6 +30,10 @@ model User {
   ratingsGiven        Rating[]       @relation("Rater")
   subscription        Subscription?
   userSkills          UserSkill[]
+  sentMessages        ChatMessage[]  @relation("SentMessages")
+  receivedMessages    ChatMessage[]  @relation("ReceivedMessages")
+  teammateRequests    TeammateRequest[]
+  applicationsSent     TeammateApplication[]
 
   @@map("users")
 }
@@ -185,6 +189,62 @@ model BroadcastMessage {
   sentAt        DateTime @default(now()) @map("sent_at")
 
   @@map("broadcast_messages")
+}
+
+model ChatMessage {
+  id          String   @id @default(uuid())
+  senderId    String   @map("sender_id")
+  receiverId  String   @map("receiver_id")
+  body        String   @db.Text
+  isRead      Boolean  @default(false) @map("is_read")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  sender      User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver    User     @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@index([senderId, receiverId])
+  @@map("chat_messages")
+}
+
+model TeammateRequest {
+  id              String                @id @default(uuid())
+  creatorId       String                @map("creator_id")
+  title           String
+  description     String                @db.Text
+  requiredSkills  String[]              @map("required_skills")
+  status          ProjectStatus         @default(OPEN)
+  createdAt       DateTime              @default(now()) @map("created_at")
+  updatedAt       DateTime              @updatedAt @map("updated_at")
+
+  creator         User                  @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  applications    TeammateApplication[]
+
+  @@map("teammate_requests")
+}
+
+model TeammateApplication {
+  id              String                @id @default(uuid())
+  requestId       String                @map("request_id")
+  applicantId     String                @map("applicant_id")
+  message         String?               @db.Text
+  status          ApplicationStatus     @default(PENDING)
+  createdAt       DateTime              @default(now()) @map("created_at")
+
+  request         TeammateRequest       @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  applicant       User                  @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+
+  @@map("teammate_applications")
+}
+
+enum ProjectStatus {
+  OPEN
+  CLOSED
+}
+
+enum ApplicationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
 }
 
 enum UserRole {

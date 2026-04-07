@@ -1,4 +1,5 @@
 import { sendTextMessage } from '../whatsapp/meta.client';
+import { MessageBuilder } from '../whatsapp/message.builder';
 import prisma from '../../shared/database/prisma';
 import logger from '../../shared/logger';
 
@@ -8,7 +9,7 @@ export class NotificationService {
         requesterPhone: string,
         requesterName: string,
         acceptorName: string,
-        acceptorPhone: string   // ← add this
+        acceptorPhone: string
     ): Promise<void> {
         const message =
             `🎉 *${acceptorName}* accepted your connection request!\n\n` +
@@ -16,6 +17,19 @@ export class NotificationService {
             `Say hello and start collaborating 🚀`;
 
         await this.send(requesterPhone, message, 'connection_accepted');
+    }
+
+    async notifyReplyReceived(
+        receiverPhone: string,
+        senderName: string,
+        messageContent: string
+    ): Promise<void> {
+        const message =
+            `💬 *Message from ${senderName}* regarding your request:\n\n` +
+            `"${messageContent}"\n\n` +
+            `_You can reply back by using the Match Network bot._`;
+
+        await this.send(receiverPhone, message, 'connection_reply');
     }
 
     async notifyAcceptorWithRequesterInfo(
@@ -55,6 +69,31 @@ export class NotificationService {
             `_Reply *menu* → Pending requests to respond._`;
 
         await this.send(receiverPhone, message, 'connection_received');
+    }
+
+    async notifyChatMessage(
+        receiverPhone: string,
+        senderName: string,
+        text: string,
+        isInChat: boolean
+    ): Promise<void> {
+        const message = isInChat
+            ? `💬 *${senderName}*: ${text}`
+            : MessageBuilder.incomingMessage(senderName, text);
+
+        await this.send(receiverPhone, message, 'chat_message');
+    }
+
+    async notifyTeammateApplication(
+        posterPhone: string,
+        applicantName: string,
+        projectName: string
+    ): Promise<void> {
+        const message =
+            `📬 *${applicantName}* applied for your project: *${projectName}*!\n\n` +
+            `_You can see their profile or start a chat with them in your connections menu._`;
+
+        await this.send(posterPhone, message, 'teammate_application');
     }
 
     private async send(

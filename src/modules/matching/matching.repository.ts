@@ -9,6 +9,7 @@ export interface RetrievalFilters {
     longitude?: number | null;
     experienceLevel?: string | null;
     limit?: number;
+    loosenFilters?: boolean;
 }
 
 export async function fetchCandidates(
@@ -50,9 +51,9 @@ export async function fetchCandidates(
         where: {
             id: { notIn: [...excludedIds] },
             isActive: true,
-            userSkills: requiredSkillIds.length > 0
-                ? { some: { skillId: { in: requiredSkillIds } } }
-                : undefined,
+            userSkills: (filters.loosenFilters || requiredSkillIds.length === 0)
+                ? undefined
+                : { some: { skillId: { in: requiredSkillIds } } },
         },
         include: {
             profile: true,

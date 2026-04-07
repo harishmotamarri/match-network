@@ -22,6 +22,7 @@ export interface MatchResult {
     availability: string;
     matchingSkills: string[];
     connectionId: string;
+    isSuggestion?: boolean;
 }
 
 export class MatchingService {
@@ -99,6 +100,43 @@ export class MatchingService {
             .slice(0, 10);
 
         logger.info({ requesterId, scoredCount: scored.length }, 'Candidates scored and filtered');
+
+        // ── FALLBACK: Suggested Users ──────────────────────────────────────────
+        // If no exact matches found, try again with loose filters
+        if (scored.length === 0) {
+            logger.info({ requesterId }, 'No exact matches found — trying loosened fallback');
+            const fallbackCandidates = await fetchCandidates({
+                ...requesterContext,
+                requesterId,
+                loosenFilters: true,
+                limit: 10
+            });
+
+            const fallbackScored = fallbackCandidates
+                .map((candidate) => ({
+                    candidate,
+                    score: scoreCandidate(candidate, requesterContext),
+                }))
+                .filter((r) => r.score > 0.05) // allow lower threshold for suggestions
+                .sort((a, b) => b.score - a.score)
+                .slice(0, 5);
+
+            if (fallbackScored.length > 0) {
+                return fallbackScored.map(({ candidate, score }) => {
+                    return {
+                        userId: candidate.userId,
+                        name: candidate.name,
+                        city: candidate.city,
+                        matchScore: score,
+                        availability: candidate.availability,
+                        matchingSkills: [], // no matching skills in fallback usually
+                        connectionId: '',
+                        isSuggestion: true
+                    };
+                });
+            }
+            return [];
+        }
 
         if (scored.length === 0) return [];
 
@@ -270,19 +308,41 @@ export class MatchingService {
             include: {
                 requester: {
                     select: {
-                        id: true, name: true,
-                        profile: { select: { city: true, avatarUrl: true, availability: true } },
+                        id: true, name: true, phoneNumber: true,
+                        profile: { select: { bio: true, city: true, avatarUrl: true, experienceLevel: true, availability: true } },
+                        userSkills: { include: { skill: true } },
                     },
                 },
                 receiver: {
                     select: {
-                        id: true, name: true,
-                        profile: { select: { city: true, avatarUrl: true, availability: true } },
+                        id: true, name: true, phoneNumber: true,
+                        profile: { select: { bio: true, city: true, avatarUrl: true, experienceLevel: true, availability: true } },
+                        userSkills: { include: { skill: true } },
                     },
                 },
             },
             orderBy: { respondedAt: 'desc' },
         });
+    }
+
+    // New: Remove a connection
+    async removeConnection(connectionId: string, userId: string) {
+        const connection = await prisma.connection.findUnique({
+            where: { id: connectionId }
+        });
+
+        if (!connection) throw new Error('Connection not found');
+        if (connection.requesterId !== userId && connection.receiverId !== userId) {
+            throw new Error('Not authorised to remove this connection');
+        }
+
+        await prisma.connection.delete({ where: { id: connectionId } });
+
+        // Invalidate match cache
+        const cacheKeys = await redis.keys(`matches:${userId}:*`);
+        if (cacheKeys.length > 0) await redis.del(...cacheKeys);
+
+        return { success: true };
     }
 
     // Get pending requests (received)
@@ -306,6 +366,26 @@ export class MatchingService {
             },
             orderBy: { createdAt: 'desc' },
         });
+    }
+
+    // ── AI RECOMMENDATIONS ───────────────────────────────────────────────────
+    async getSparkRecommendations(userId: string) {
+        // Fetch top 5 high-reputation or premium users (excluding self and current connections)
+        const candidates = await fetchCandidates({
+            requesterId: userId,
+            requiredSkillIds: [], // general search
+            radiusKm: 500,        // broader radius for AI
+            loosenFilters: true,
+            limit: 5
+        });
+
+        return candidates.map(c => ({
+            name: c.name,
+            city: c.city,
+            skills: c.skills.map((s: any) => s.skill?.name || 'Skill'),
+            experience: c.experienceLevel,
+            reputation: c.reputationScore
+        }));
     }
 }
 

@@ -14,7 +14,19 @@ export type BotState =
     | 'PROFILE_SETUP_EXPERIENCE'
     | 'PROFILE_SETUP_SKILLS'
     | 'PROFILE_SETUP_LOCATION'
-    | 'PROFILE_SETUP_AVAILABILITY';
+    | 'PROFILE_SETUP_AVAILABILITY'
+    // ── NEW: connection management ───────────────
+    | 'AWAITING_CONNECTION_ACTION_PICK'
+    | 'AWAITING_CONNECTION_ACTION'
+    | 'AWAITING_RESPOND_MESSAGE'
+    // ── NEW: Find Teammates ──────────────────────
+    | 'TEAMMATE_HUB'
+    | 'TEAMMATE_POST_TITLE'
+    | 'TEAMMATE_POST_DESC'
+    | 'TEAMMATE_POST_SKILLS'
+    | 'TEAMMATE_BROWSE_PICK'
+    | 'TEAMMATE_DETAIL_ACTION'
+    | 'CHATTING';
 
 export interface BotSession {
     state: BotState;
