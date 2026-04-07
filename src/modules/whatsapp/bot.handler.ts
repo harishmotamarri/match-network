@@ -24,11 +24,21 @@ const EXPERIENCE_MAP: Record<string, 'STUDENT' | 'JUNIOR' | 'MID' | 'SENIOR' | '
 
 export class BotHandler {
 
-    async handle(phone: string, incomingMessage: string): Promise<string> {
+    async handle(phone: string, incomingMessage: string): Promise<string | any> {
         const msg = incomingMessage.trim().toLowerCase();
         const session = await sessionManager.get(phone);
 
         logger.info({ phone, state: session.state, msg }, 'WA message received');
+
+        if (session.userId) {
+            const user = await prisma.user.findUnique({
+                where: { id: session.userId },
+                select: { isActive: true }
+            });
+            if (user && !user.isActive) {
+                return `🚫 Your account is currently suspended. Please contact support.`;
+            }
+        }
 
         try {
             return await this.route(session, msg, phone);
@@ -38,7 +48,7 @@ export class BotHandler {
         }
     }
 
-    private async route(session: BotSession, msg: string, phone: string): Promise<string> {
+    private async route(session: BotSession, msg: string, phone: string): Promise<string | any> {
 
         // ── GLOBAL ESCAPES — work from ANY state ─────────────────────────────────
         if (['menu', 'home', 'hi', 'hello', 'hey'].includes(msg)) {
@@ -84,7 +94,7 @@ export class BotHandler {
     }
 
     // ── IDLE ──────────────────────────────────────────────────────────────────
-    private async handleIdle(session: BotSession, phone: string, _msg: string): Promise<string> {
+    private async handleIdle(session: BotSession, phone: string, _msg: string): Promise<string | any> {
         const existing = await prisma.user.findUnique({ where: { phoneNumber: phone } });
 
         if (existing) {
@@ -131,14 +141,11 @@ export class BotHandler {
 
             if (isNewUser) {
                 // Route new users into profile setup
-                const allSkills = await skillsService.getAllSkills();
-
                 await sessionManager.patch(session.phoneNumber, {
                     state: 'PROFILE_SETUP_EXPERIENCE',
                     userId: user.id,
                     tempData: {
                         userName: user.name,
-                        allSkills,
                     },
                 });
 
@@ -161,7 +168,7 @@ export class BotHandler {
 
     // ── MAIN MENU ─────────────────────────────────────────────────────────────
     // ── UPDATED: added case '5' for Edit Profile ──────────────────────────────
-    private async handleMainMenu(session: BotSession, msg: string): Promise<string> {
+    private async handleMainMenu(session: BotSession, msg: string): Promise<string | any> {
         switch (msg) {
             case '1': return this.startFindMatches(session);
             case '2': return this.showMyConnections(session);
@@ -197,35 +204,30 @@ export class BotHandler {
             return `Please reply with a number 1–5.\n\n${MessageBuilder.askExperienceLevel()}`;
         }
 
-        const { allSkills } = session.tempData ?? {};
-
         await sessionManager.patch(session.phoneNumber, {
             state: 'PROFILE_SETUP_SKILLS',
             tempData: { ...session.tempData, experienceLevel: level },
         });
 
-        return MessageBuilder.askProfileSkills(allSkills);
+        return MessageBuilder.askProfileSkills();
     }
 
-    private async handleProfileSkills(session: BotSession, msg: string): Promise<string> {
-        const { allSkills } = session.tempData ?? {};
+    private async handleProfileSkills(session: BotSession, msg: string): Promise<string | any> {
+        const names = msg.split(',').filter(s => s.trim().length > 0).map(s => s.trim());
 
-        const indices = msg.split(',').map(s => parseInt(s.trim(), 10) - 1);
-        const valid = indices.filter((i: number) => i >= 0 && i < allSkills.length);
-
-        if (valid.length === 0) {
-            return `Please enter valid numbers from the list (e.g. _1, 3, 7_):`;
+        if (names.length === 0) {
+            return `Please enter at least one skill:`;
         }
 
-        if (valid.length > 10) {
+        if (names.length > 10) {
             return `Maximum 10 skills allowed. Please narrow down your selection:`;
         }
 
-        const selectedSkills = valid.map((i: number) => allSkills[i]);
+        const selectedSkillIds = await skillsService.ensureSkillsExist(names);
 
         await sessionManager.patch(session.phoneNumber, {
             state: 'PROFILE_SETUP_LOCATION',
-            tempData: { ...session.tempData, selectedSkills },
+            tempData: { ...session.tempData, selectedSkillIds },
         });
 
         return MessageBuilder.askLocation();
@@ -249,15 +251,15 @@ export class BotHandler {
             return `Please reply 1, 2, or 3.\n\n${MessageBuilder.askProfileAvailability()}`;
         }
 
-        const { experienceLevel, selectedSkills, city, userName } = session.tempData ?? {};
+        const { experienceLevel, selectedSkillIds, city, userName } = session.tempData ?? {};
 
-        // Guard against missing/empty selectedSkills (session expired or data lost)
-        if (!selectedSkills || selectedSkills.length === 0) {
+        // Guard against missing/empty selectedSkillIds (session expired or data lost)
+        if (!selectedSkillIds || selectedSkillIds.length === 0) {
             await sessionManager.patch(session.phoneNumber, {
                 state: 'MAIN_MENU',
                 tempData: {},
             });
-            return `⚠️ Your session expired and skill selections were lost. Please type *menu* to restart profile setup.`;
+            return MessageBuilder.mainMenu(`⚠️ Your session expired and skill selections were lost. Please restart profile setup.`);
         }
 
         // Save profile fields
@@ -270,19 +272,10 @@ export class BotHandler {
         // Save availability separately
         await userService.updateAvailability(session.userId!, availability);
 
-        // Re-fetch current skills from DB to get valid IDs (session-cached UUIDs may be stale)
-        const currentSkills = await skillsService.getAllSkills();
-        const skillsByName = new Map<string, { id: string; name: string }>(
-            currentSkills.map((s: any) => [s.name, s])
-        );
-
         // Clear old skills, insert new ones
         await prisma.userSkill.deleteMany({ where: { userId: session.userId! } });
-        for (const skill of selectedSkills) {
-            const current = skillsByName.get(skill.name);
-            if (current) {
-                await skillsService.addUserSkill(session.userId!, current.id, 3);
-            }
+        for (const skillId of selectedSkillIds) {
+            await skillsService.addUserSkill(session.userId!, skillId, 3);
         }
 
         await sessionManager.patch(session.phoneNumber, {
@@ -296,30 +289,23 @@ export class BotHandler {
     // ── END NEW ───────────────────────────────────────────────────────────────
 
     // ── FIND MATCHES ──────────────────────────────────────────────────────────
-    private async startFindMatches(session: BotSession): Promise<string> {
-        const skills = await skillsService.getAllSkills();
-        const listed = skills.slice(0, 20);
-
+    private async startFindMatches(session: BotSession): Promise<string | any> {
         await sessionManager.patch(session.phoneNumber, {
             state: 'AWAITING_MATCH_SKILLS',
-            tempData: { ...session.tempData, skillList: listed },
+            tempData: { ...session.tempData },
         });
 
-        return MessageBuilder.askSkills(listed);
+        return MessageBuilder.askSkills();
     }
 
-    private async handleMatchSkillSelection(session: BotSession, msg: string): Promise<string> {
-        const { skillList } = session.tempData ?? {};
-        if (!skillList) return this.goToMenu(session);
+    private async handleMatchSkillSelection(session: BotSession, msg: string): Promise<string | any> {
+        const names = msg.split(',').filter(s => s.trim().length > 0).map(s => s.trim());
 
-        const indices = msg.split(',').map(s => parseInt(s.trim(), 10) - 1);
-        const valid = indices.filter(i => i >= 0 && i < skillList.length);
-
-        if (valid.length === 0) {
-            return `Please enter valid numbers from the list (e.g. _1, 3_):`;
+        if (names.length === 0) {
+            return `Please enter at least one skill:`;
         }
 
-        const selectedSkillIds = valid.map((i: number) => skillList[i].id);
+        const selectedSkillIds = await skillsService.ensureSkillsExist(names);
 
         await sessionManager.patch(session.phoneNumber, {
             state: 'AWAITING_CONNECTION_TYPE',
@@ -398,13 +384,13 @@ export class BotHandler {
     }
 
     // ── MY CONNECTIONS ────────────────────────────────────────────────────────
-    private async showMyConnections(session: BotSession): Promise<string> {
+    private async showMyConnections(session: BotSession): Promise<string | any> {
         const connections = await matchingService.getMyConnections(session.userId!);
         return MessageBuilder.myConnections(connections, session.userId!);
     }
 
     // ── PENDING REQUESTS ──────────────────────────────────────────────────────
-    private async showPendingRequests(session: BotSession): Promise<string> {
+    private async showPendingRequests(session: BotSession): Promise<string | any> {
         const pending = await matchingService.getPendingRequests(session.userId!);
 
         if (pending.length === 0) return MessageBuilder.pendingRequests([]);
@@ -417,7 +403,7 @@ export class BotHandler {
         return MessageBuilder.pendingRequests(pending);
     }
 
-    private async handleRespondChoice(session: BotSession, msg: string): Promise<string> {
+    private async handleRespondChoice(session: BotSession, msg: string): Promise<string | any> {
         if (msg === '0') return this.goToMenu(session);
 
         const { pendingRequests, selectedRequestIndex } = session.tempData ?? {};
@@ -442,7 +428,7 @@ export class BotHandler {
                 ? `🎉 You're now connected with *${connection.requester.name}*!`
                 : `✅ Request from *${connection.requester.name}* declined.`;
 
-            return `${reply}\n\n${MessageBuilder.mainMenu()}`;
+            return MessageBuilder.mainMenu(reply);
         }
 
         // ── STEP 1: pick which request to respond to ──────────────────────────
@@ -471,7 +457,7 @@ export class BotHandler {
         return MessageBuilder.availabilityMenu();
     }
 
-    private async handleAvailability(session: BotSession, msg: string): Promise<string> {
+    private async handleAvailability(session: BotSession, msg: string): Promise<string | any> {
         const status = AVAILABILITY_MAP[msg];
         if (!status) {
             return `Please reply 1, 2, or 3.\n\n${MessageBuilder.availabilityMenu()}`;
@@ -480,23 +466,22 @@ export class BotHandler {
         await userService.updateAvailability(session.userId!, status);
 
         await sessionManager.patch(session.phoneNumber, { state: 'MAIN_MENU' });
-        return `✅ Availability set to *${status}*.\n\n${MessageBuilder.mainMenu()}`;
+        return MessageBuilder.mainMenu(`✅ Availability set to *${status}*.`);
     }
 
     // ── HELPERS ───────────────────────────────────────────────────────────────
-    private async goToMenu(session: BotSession): Promise<string> {
+    private async goToMenu(session: BotSession): Promise<string | any> {
         await sessionManager.patch(session.phoneNumber, { state: 'MAIN_MENU' });
         return MessageBuilder.mainMenu();
     }
 
-    private helpMessage(): string {
-        return (
+    private helpMessage(): any {
+        return MessageBuilder.mainMenu(
             `ℹ️ *Match Network Help*\n\n` +
             `• Type *menu* or *hi* — go to main menu\n` +
             `• Type *0* or *cancel* — exit current flow\n` +
             `• Type *help* — see this message\n\n` +
-            `_These commands work from anywhere, anytime._\n\n` +
-            `${MessageBuilder.mainMenu()}`
+            `_These commands work from anywhere, anytime._`
         );
     }
     // ── AI CHAT ───────────────────────────────────────────────────────────────

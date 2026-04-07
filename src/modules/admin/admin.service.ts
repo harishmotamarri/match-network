@@ -65,23 +65,33 @@ export class AdminService {
         return { users, total, page, totalPages: Math.ceil(total / limit) };
     }
 
-    async blockUser(userId: string) {
+    async blockUser(identifier: string) {
+        const target = await prisma.user.findFirst({
+            where: { OR: [{ id: identifier }, { phoneNumber: identifier }] },
+        });
+        if (!target) throw new Error('User not found. Try their full phone number or ID.');
+
         const user = await prisma.user.update({
-            where: { id: userId },
+            where: { id: target.id },
             data: { isActive: false },
             select: { name: true, phoneNumber: true },
         });
-        logger.info({ userId }, 'User blocked by admin');
+        logger.info({ userId: target.id }, 'User blocked by admin');
         return user;
     }
 
-    async unblockUser(userId: string) {
+    async unblockUser(identifier: string) {
+        const target = await prisma.user.findFirst({
+            where: { OR: [{ id: identifier }, { phoneNumber: identifier }] },
+        });
+        if (!target) throw new Error('User not found. Try their full phone number or ID.');
+
         const user = await prisma.user.update({
-            where: { id: userId },
+            where: { id: target.id },
             data: { isActive: true },
             select: { name: true, phoneNumber: true },
         });
-        logger.info({ userId }, 'User unblocked by admin');
+        logger.info({ userId: target.id }, 'User unblocked by admin');
         return user;
     }
 
