@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { botHandler } from './bot.handler';
-import { sendTextMessage, sendInteractiveList, markReadAndTyping } from './meta.client';
+import { sendTextMessage, sendInteractiveList, sendInteractiveButtons, markReadAndTyping } from './meta.client';
 import { config } from '../../config';
 import logger from '../../shared/logger';
 
@@ -78,7 +78,7 @@ export class WhatsAppController {
                 try {
                     await sendInteractiveList(from, reply.text, reply.buttonText, reply.sections);
                 } catch (listErr: any) {
-                    // Fallback to text if interactive list fails, with error context for debugging
+                    // Graceful text fallback if interactive list fails
                     let fallbackText = `${reply.text}\n\n`;
                     reply.sections.forEach((sec: any) => {
                         fallbackText += `*${sec.title}*\n`;
@@ -86,9 +86,20 @@ export class WhatsAppController {
                             fallbackText += `${row.id}. ${row.title}\n`;
                         });
                     });
-                    
-                    // Prepend the error to help identify the meta failure instantly 
-                    await sendTextMessage(from, `[Debug] ${listErr.message}\n\n${fallbackText}`);
+                    fallbackText += `\n_Reply with a number to proceed_`;
+                    await sendTextMessage(from, fallbackText);
+                }
+            } else if (reply && reply.type === 'buttons') {
+                try {
+                    await sendInteractiveButtons(from, reply.text, reply.buttons);
+                } catch (btnErr: any) {
+                    // Graceful text fallback if interactive buttons fail
+                    let fallbackText = `${reply.text}\n\n`;
+                    reply.buttons.forEach((btn: any, i: number) => {
+                        fallbackText += `${i + 1}. ${btn.title}\n`;
+                    });
+                    fallbackText += `\n_Reply with a number to proceed_`;
+                    await sendTextMessage(from, fallbackText);
                 }
             }
 

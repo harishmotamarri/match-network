@@ -62,12 +62,62 @@ export async function sendTemplateMessage(
     }
 }
 
+export async function sendInteractiveButtons(
+    to: string,
+    bodyText: string,
+    buttons: { id: string; title: string }[]
+): Promise<void> {
+    try {
+        await axios.post(
+            BASE_URL,
+            {
+                messaging_product: 'whatsapp',
+                recipient_type: 'individual',
+                to,
+                type: 'interactive',
+                interactive: {
+                    type: 'button',
+                    body: { text: bodyText },
+                    action: {
+                        buttons: buttons.map((b) => ({
+                            type: 'reply',
+                            reply: {
+                                id: b.id,
+                                title: b.title.substring(0, 20),
+                            },
+                        })),
+                    },
+                },
+            },
+            { headers }
+        );
+    } catch (err: any) {
+        const metaError = err.response?.data?.error?.message || err.message;
+        logger.error(
+            { err: err.response?.data ?? err.message, to },
+            'Meta WA send buttons failed'
+        );
+        throw new Error(`Meta API Error: ${metaError}`);
+    }
+}
+
 export async function sendInteractiveList(
     to: string,
     bodyText: string,
     buttonText: string,
     sections: any[]
 ): Promise<void> {
+    // Sanitize lengths per Meta specifications to firmly prevent API rejection
+    const sanitizedButtonText = buttonText.substring(0, 20);
+    const sanitizedSections = sections.map((s) => ({
+        title: s.title.substring(0, 24),
+        rows: s.rows.map((r: any) => ({
+            id: r.id,
+            title: r.title.substring(0, 24),
+            ...(r.description ? { description: r.description.substring(0, 72) } : {})
+        }))
+    }));
+
     try {
         await axios.post(
             BASE_URL,
@@ -80,8 +130,8 @@ export async function sendInteractiveList(
                     type: 'list',
                     body: { text: bodyText },
                     action: {
-                        button: buttonText,
-                        sections
+                        button: sanitizedButtonText,
+                        sections: sanitizedSections
                     }
                 }
             },

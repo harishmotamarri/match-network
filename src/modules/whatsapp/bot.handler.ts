@@ -8,19 +8,27 @@ import { authService } from '../auth/auth.service';
 import logger from '../../shared/logger';
 import Groq from 'groq-sdk';
 const CONNECTION_TYPE_MAP: Record<string, string> = {
+    // Interactive list IDs (primary)
+    'conn_1': 'COLLABORATION', 'conn_2': 'MENTORSHIP', 'conn_3': 'JOB',
+    'conn_4': 'INTERNSHIP', 'conn_5': 'INVESTMENT', 'conn_6': 'NETWORKING',
+    // Fallback text numbers
     '1': 'COLLABORATION', '2': 'MENTORSHIP', '3': 'JOB',
     '4': 'INTERNSHIP', '5': 'INVESTMENT', '6': 'NETWORKING',
 };
 
 const AVAILABILITY_MAP: Record<string, 'AVAILABLE' | 'BUSY' | 'AWAY'> = {
+    // Interactive button IDs (primary)
+    'avail_1': 'AVAILABLE', 'avail_2': 'BUSY', 'avail_3': 'AWAY',
+    // Fallback text numbers
     '1': 'AVAILABLE', '2': 'BUSY', '3': 'AWAY',
 };
 
-// ── NEW ──────────────────────────────────────────────────────────────────────
 const EXPERIENCE_MAP: Record<string, 'STUDENT' | 'JUNIOR' | 'MID' | 'SENIOR' | 'EXPERT'> = {
+    // Interactive list IDs (primary)
+    'exp_1': 'STUDENT', 'exp_2': 'JUNIOR', 'exp_3': 'MID', 'exp_4': 'SENIOR', 'exp_5': 'EXPERT',
+    // Fallback text numbers
     '1': 'STUDENT', '2': 'JUNIOR', '3': 'MID', '4': 'SENIOR', '5': 'EXPERT',
 };
-// ── END NEW ──────────────────────────────────────────────────────────────────
 
 export class BotHandler {
 
@@ -186,7 +194,7 @@ export class BotHandler {
 
     // ── NEW: PROFILE SETUP FLOW ───────────────────────────────────────────────
 
-    private async startEditProfile(session: BotSession): Promise<string> {
+    private async startEditProfile(session: BotSession): Promise<string | any> {
         const allSkills = await skillsService.getAllSkills();
 
         await sessionManager.patch(session.phoneNumber, {
@@ -197,11 +205,11 @@ export class BotHandler {
         return MessageBuilder.askExperienceLevel();
     }
 
-    private async handleProfileExperience(session: BotSession, msg: string): Promise<string> {
+    private async handleProfileExperience(session: BotSession, msg: string): Promise<string | any> {
         const level = EXPERIENCE_MAP[msg];
 
         if (!level) {
-            return `Please reply with a number 1–5.\n\n${MessageBuilder.askExperienceLevel()}`;
+            return MessageBuilder.askExperienceLevel();
         }
 
         await sessionManager.patch(session.phoneNumber, {
@@ -244,11 +252,11 @@ export class BotHandler {
         return MessageBuilder.askProfileAvailability();
     }
 
-    private async handleProfileAvailability(session: BotSession, msg: string): Promise<string> {
+    private async handleProfileAvailability(session: BotSession, msg: string): Promise<string | any> {
         const availability = AVAILABILITY_MAP[msg];
 
         if (!availability) {
-            return `Please reply 1, 2, or 3.\n\n${MessageBuilder.askProfileAvailability()}`;
+            return MessageBuilder.askProfileAvailability();
         }
 
         const { experienceLevel, selectedSkillIds, city, userName } = session.tempData ?? {};
@@ -315,10 +323,10 @@ export class BotHandler {
         return MessageBuilder.askConnectionType();
     }
 
-    private async handleConnectionType(session: BotSession, msg: string): Promise<string> {
+    private async handleConnectionType(session: BotSession, msg: string): Promise<string | any> {
         const connectionType = CONNECTION_TYPE_MAP[msg];
         if (!connectionType) {
-            return `Please reply with a number 1–6.\n\n${MessageBuilder.askConnectionType()}`;
+            return MessageBuilder.askConnectionType();
         }
 
         const { selectedSkillIds } = session.tempData ?? {};
@@ -460,7 +468,7 @@ export class BotHandler {
     private async handleAvailability(session: BotSession, msg: string): Promise<string | any> {
         const status = AVAILABILITY_MAP[msg];
         if (!status) {
-            return `Please reply 1, 2, or 3.\n\n${MessageBuilder.availabilityMenu()}`;
+            return MessageBuilder.availabilityMenu();
         }
 
         await userService.updateAvailability(session.userId!, status);
