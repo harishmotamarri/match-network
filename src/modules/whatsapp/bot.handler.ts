@@ -117,6 +117,8 @@ export class BotHandler {
             case 'TEAMMATE_HUB': return this.handleTeammateAction(session, msg);
             case 'TEAMMATE_POST_TITLE': return this.handleTeammatePostTitle(session, msg);
             case 'TEAMMATE_POST_DESC': return this.handleTeammatePostDesc(session, msg);
+            case 'TEAMMATE_POST_SKILLS': return this.handleTeammatePostSkills(session, msg);
+            case 'TEAMMATE_POST_CONFIRM': return this.handleTeammatePostConfirm(session, msg);
             case 'TEAMMATE_BROWSE_PICK': return this.handleTeammateBrowsePick(session, msg);
             case 'TEAMMATE_DETAIL_ACTION': return this.handleTeammateDetailAction(session, msg);
             case 'CHATTING': return this.handleChat(session, msg);
@@ -704,7 +706,7 @@ export class BotHandler {
     private helpMessage(): any {
         return MessageBuilder.mainMenu(
             `ℹ️ *How to use Match Network*\n\n` +
-            `• *1–6* — Select a menu option\n` +
+            `• *1–7* — Select a menu option\n` +
             `• *menu* or *hi* — Return to main menu\n` +
             `• *0* or *cancel* — Exit any flow\n` +
             `• *help* — See this message\n\n` +
@@ -767,6 +769,7 @@ PLATFORM ACTIONS:
 - Tap *3* → View pending requests
 - Tap *4* → Update availability
 - Tap *5* → Edit profile
+- Tap *6* → Find teammates for projects
 
 YOUR EXTENDED CAPABILITIES:
 1. **Suggest Connections**: Proactively suggest meeting the real people listed in the "COMMUNITY SNEAK PEEK". Mention them by name.
@@ -778,7 +781,7 @@ STRICT FORMATTING RULES:
 1. Use WhatsApp markdown: *bold* for emphasis, _italic_ for quotes/examples.
 2. Emojis: Use 1-2 per paragraph to keep it friendly.
 3. Length: Keep overall response under 220 words.
-4. Actionable: Always tell the user exactly which button (1-5) to tap to find those types of people. 
+4. Actionable: Always tell the user exactly which button (1-7) to tap to find those types of people. 
 5. Language: Respond in the same language as the user.`,
                     },
                     {
@@ -796,7 +799,7 @@ STRICT FORMATTING RULES:
                 `────────────────────────\n\n` +
                 aiReply +
                 `\n\n────────────────────────\n` +
-                `_Tap *1–5* to navigate · Type *menu* for options_`
+                `_Tap *1–7* to navigate · Type *menu* for options_`
             );
 
         } catch (err) {
@@ -965,16 +968,41 @@ STRICT FORMATTING RULES:
         if (msg === '0') return this.startTeammateHub(session);
 
         const skills = await skillsService.sanitizeSkills(msg);
+        if (skills.length === 0) {
+            return `⚠️ *No Skills Recognized*\n\nPlease provide at least one valid skill separated by commas.\n_Example: React, UI Design_`;
+        }
+
         const { projectTitle, projectDesc } = session.tempData ?? {};
+
+        await sessionManager.patch(session.phoneNumber, { 
+            state: 'TEAMMATE_POST_CONFIRM',
+            tempData: { ...session.tempData, projectSkills: skills }
+        });
+
+        return MessageBuilder.teammatePostPreview(projectTitle, projectDesc, skills);
+    }
+
+    private async handleTeammatePostConfirm(session: BotSession, msg: string): Promise<any> {
+        if (msg === 'post_cancel' || msg === '2' || msg === '0') {
+            await sessionManager.patch(session.phoneNumber, { state: 'TEAMMATE_HUB' });
+            return MessageBuilder.mainMenu(`❌ *Post cancelled and discarded.*`);
+        }
+
+        if (msg !== 'post_confirm' && msg !== '1') {
+             const { projectTitle, projectDesc, projectSkills } = session.tempData ?? {};
+             return MessageBuilder.teammatePostPreview(projectTitle, projectDesc, projectSkills || []);
+        }
+
+        const { projectTitle, projectDesc, projectSkills } = session.tempData ?? {};
 
         await teammateService.createRequest({
             creatorId: session.userId!,
             title: projectTitle,
             description: projectDesc,
-            requiredSkills: skills
+            requiredSkills: projectSkills
         });
 
-        await sessionManager.patch(session.phoneNumber, { state: 'TEAMMATE_HUB' });
+        await sessionManager.patch(session.phoneNumber, { state: 'TEAMMATE_HUB', tempData: {} });
         return MessageBuilder.mainMenu(`🎉 *Project Posted Successfully!*\n\nOther builders can now see your request and apply.`);
     }
 
@@ -989,24 +1017,24 @@ STRICT FORMATTING RULES:
 
         await sessionManager.patch(session.phoneNumber, {
             state: 'TEAMMATE_BROWSE_PICK',
-            tempData: { ...session.tempData, browsedRequests: requests }
+            tempData: { ...session.tempData, browsedRequests: requests, isMyPosts: false }
         });
 
-        return MessageBuilder.teammateList(requests, userSkills);
+        return MessageBuilder.teammateList(requests, userSkills, false);
     }
 
     private async handleTeammateBrowsePick(session: BotSession, msg: string): Promise<any> {
         if (msg === '0') return this.startTeammateHub(session);
 
         const requests = session.tempData?.browsedRequests || [];
-        const index = parseInt(msg.replace('req_', '')) || parseInt(msg) - 1;
+        const index = msg.startsWith('req_') ? parseInt(msg.replace('req_', ''), 10) : parseInt(msg, 10) - 1;
 
         const req = requests[index];
-        if (!req) return this.browseTeammateRequests(session);
+        if (!req) return session.tempData?.isMyPosts ? this.showMyTeammatePosts(session) : this.browseTeammateRequests(session);
 
         // Fetch full detail
         const fullReq = await teammateService.getRequestById(req.id);
-        if (!fullReq) return this.browseTeammateRequests(session);
+        if (!fullReq) return session.tempData?.isMyPosts ? this.showMyTeammatePosts(session) : this.browseTeammateRequests(session);
 
         await sessionManager.patch(session.phoneNumber, {
             state: 'TEAMMATE_DETAIL_ACTION',
@@ -1019,7 +1047,9 @@ STRICT FORMATTING RULES:
     private async handleTeammateDetailAction(session: BotSession, msg: string): Promise<any> {
         const { selectedProjectId, posterId } = session.tempData ?? {};
 
-        if (msg === 'team_browse' || msg === 'back') return this.browseTeammateRequests(session);
+        if (msg === 'team_browse' || msg === 'back') {
+            return session.tempData?.isMyPosts ? this.showMyTeammatePosts(session) : this.browseTeammateRequests(session);
+        }
 
         if (msg === 'req_apply' || msg === '1') {
             await teammateService.applyToRequest(selectedProjectId, session.userId!);
@@ -1045,7 +1075,7 @@ STRICT FORMATTING RULES:
             return MessageBuilder.mainMenu(`✅ *Project Closed.*\n\nYour post is no longer visible to other builders.`);
         }
 
-        return this.browseTeammateRequests(session);
+        return session.tempData?.isMyPosts ? this.showMyTeammatePosts(session) : this.browseTeammateRequests(session);
     }
 
     private async showMyTeammatePosts(session: BotSession): Promise<any> {
@@ -1054,10 +1084,10 @@ STRICT FORMATTING RULES:
 
         await sessionManager.patch(session.phoneNumber, {
             state: 'TEAMMATE_BROWSE_PICK',
-            tempData: { ...session.tempData, browsedRequests: myPosts }
+            tempData: { ...session.tempData, browsedRequests: myPosts, isMyPosts: true }
         });
 
-        return MessageBuilder.teammateList(myPosts, []);
+        return MessageBuilder.teammateList(myPosts, [], true);
     }
 
 }

@@ -30,7 +30,8 @@ export class MessageBuilder {
                     rows: [
                         { id: '4', title: '📅 Update Availability', description: 'Show if you\'re open to connect' },
                         { id: '5', title: '✨ Edit Profile',        description: 'Update your skills & info' },
-                        { id: '6', title: '🤖 Chat with Spark AI',  description: 'Ask career advice or networking tips' },
+                        { id: '6', title: '🧑‍🤝‍🧑 Find Teammates',   description: 'Find team members for projects' },
+                        { id: '7', title: '🤖 Chat with Spark AI',  description: 'Ask career advice or networking tips' },
                     ]
                 }
             ]
@@ -104,7 +105,8 @@ export class MessageBuilder {
 
     static askSkills(): string {
         return (
-            `🔍 *Which skills are you looking for?*\n\n` +
+            `🔍 *Which skills are you looking for?*\n` +
+            `──────────────────────────\n\n` +
             `Type the skills you need in a collaborator, separated by commas:\n\n` +
             `_e.g. React, Marketing, Fundraising_`
         );
@@ -169,7 +171,11 @@ export class MessageBuilder {
     static askConnectionType(): any {
         return {
             type: 'list',
-            text: `🤝 *What kind of connection are you looking for?*\n\nSelect the option that best describes your goal.`,
+            text: (
+                `🤝 *Connection Goal*\n` +
+                `──────────────────────────\n\n` +
+                `What kind of connection are you looking for? Select the option that best describes your goal.`
+            ),
             buttonText: 'Select Type',
             sections: [
                 {
@@ -195,29 +201,35 @@ export class MessageBuilder {
             return this.mainMenu(`😔 *No matches found* for those skills right now.\n\nTry broader or different skills.`);
         }
 
-        const rows = matches.map((m, i) => ({
-            id: String(i + 1),
-            title: m.name,
-            description: `${Math.round(m.matchScore * 100)}% match · ${m.city || 'Remote'}`
-        }));
+        const rows = matches.map((m, i) => {
+            let rowTitle = (isSuggestion ? '🌟 ' : '🎯 ') + m.name;
+            if (rowTitle.length > 23) {
+                rowTitle = rowTitle.substring(0, 20) + '...';
+            }
+            return {
+                id: String(i + 1),
+                title: rowTitle,
+                description: `⚡ ${Math.round(m.matchScore * 100)}% Match · ${m.city || 'Remote'}`
+            };
+        });
 
-        rows.push({ id: '0', title: '↩ Back to Menu', description: 'Return to main menu' });
+        rows.push({ id: '0', title: '↩ Cancel', description: 'Return to main menu' });
 
         const header = isSuggestion
-            ? `🌟 *Suggested Professionals for You*\n\n` +
-              `_No exact skill matches found, but these top members are near you or have similar backgrounds:_`
-            : `🎯 *${matches.length} Match${matches.length > 1 ? 'es' : ''} Found!*\n\n`;
+            ? `🌟 *Suggested Professionals*\n──────────────────────────\n\n_No exact matches found, but these top builders are near you or have similar backgrounds:_\n\n`
+            : `🎯 *${matches.length} Match${matches.length > 1 ? 'es' : ''} Found!*\n──────────────────────────\n\n`;
 
         return {
             type: 'list',
             text: (
                 header +
                 matches.map((m, i) =>
-                    `*${i + 1}. ${m.name}*\n` +
-                    `📍 ${m.city || 'Remote'} · ⚡ ${Math.round(m.matchScore * 100)}% match\n` +
-                    (m.matchingSkills.length > 0 ? `🛠 ${m.matchingSkills.join(', ')}` : '')
+                    `*${i + 1}. ${m.name}* (⚡ ${Math.round(m.matchScore * 100)}%)\n` +
+                    `   📍 ${m.city || 'Remote'}\n` +
+                    (m.matchingSkills.length > 0 ? `   🛠 ${m.matchingSkills.join(', ')}` : `   🛠 _No direct skills matched_`)
                 ).join('\n\n') +
-                `\n\nSelect a profile below to send a connection request.`
+                `\n\n──────────────────────────\n` +
+                `_Select a profile below to send a connection request_`
             ),
             buttonText: isSuggestion ? 'See Suggestions' : 'View Matches',
             sections: [
@@ -233,7 +245,8 @@ export class MessageBuilder {
     // ── CONNECTION SENT ───────────────────────────────────────────────────────
     static connectionSent(name: string): any {
         return this.mainMenu(
-            `✅ *Request Sent!*\n\n` +
+            `✅ *Request Sent!*\n` +
+            `──────────────────────────\n\n` +
             `Your connection request has been sent to *${name}*.\n` +
             `They'll receive a WhatsApp notification shortly.`
         );
@@ -405,70 +418,93 @@ export class MessageBuilder {
         return {
             type: 'list',
             text: (
-                `🧑🤝🧑 *Find Teammates & Collaborators*\n\n` +
-                `Looking for a co-founder? Need a dev for a hackathon? Or just want to join a cool project?\n\n` +
-                `Select an option below to get started.`
+                `🚀 *Teammate Hub*\n` +
+                `──────────────────────────\n\n` +
+                `Find a co-founder, developer, or teammate. Select an option below to get started.`
             ),
             buttonText: 'Teammate Options',
             sections: [
                 {
                     title: 'Teammates',
                     rows: [
-                        { id: 'team_browse', title: '🔍 Browse Requests', description: 'See projects looking for teammates' },
-                        { id: 'team_post', title: '📢 Post a Request', description: 'Find teammates for your project' },
-                        { id: 'team_my', title: '📋 My Posts', description: 'Manage your active requests' },
-                        { id: '0', title: '↩ Main Menu', description: 'Go back' }
+                        { id: 'team_browse', title: '🔍 Browse Projects',  description: 'Find open opportunities & teams' },
+                        { id: 'team_post',   title: '📢 Post a Project',  description: 'Recruit for your startup/hackathon' },
+                        { id: 'team_my',     title: '📋 My Posts',        description: 'Manage your active requests' },
+                        { id: '0',           title: '↩ Main Menu',        description: 'Go back' }
                     ]
                 }
             ]
         };
     }
 
-    static teammateList(requests: any[], userSkills: string[]): any {
+    static teammateList(requests: any[], userSkills: string[], isMyPosts: boolean = false): any {
         if (requests.length === 0) {
             return {
                 type: 'buttons',
-                text: `😔 *No active teammate requests found.*\n\nBe the first to post one!`,
-                buttons: [{ id: 'team_post', title: '📢 Post Now' }, { id: '0', title: '↩ Menu' }]
+                text: isMyPosts 
+                    ? `📭 *You have no active posts.*\n\nWant to start a new project?`
+                    : `😔 *No active teammate requests found.*\n\nBe the first to post one!`,
+                buttons: [{ id: 'team_post', title: '📢 Post Now' }, { id: '0', title: '↩ Hub' }]
             };
         }
 
         const rows = requests.map((req, i) => {
             const hasMatch = req.requiredSkills.some((s: string) => userSkills.includes(s));
+            
+            let rowTitle = (!isMyPosts && hasMatch ? '🔥 ' : '') + req.title;
+            if (rowTitle.length > 23) {
+                 rowTitle = rowTitle.substring(0, 20) + '...';
+            }
+
+            let rowDesc = isMyPosts 
+                             ? `👥 ${req._count?.applications || 0} applications`
+                             : `${req.creator.name} · ${req.creator.profile?.city || 'Remote'} · ${req._count?.applications || 0} apps`;
+            if (rowDesc.length > 71) {
+                rowDesc = rowDesc.substring(0, 68) + '...';
+            }
+
             return {
                 id: `req_${i}`,
-                title: (hasMatch ? '🔥 ' : '') + req.title,
-                description: `${req.creator.name} · ${req.creator.profile?.city || 'Remote'} · ${req._count.applications} apps`
+                title: rowTitle,
+                description: rowDesc
             };
         });
 
         rows.push({ id: '0', title: '↩ Back', description: 'Return to Hub' });
 
+        const titleText = isMyPosts 
+            ? `📋 *Your Active Posts*\n──────────────────────────\n\n` 
+            : `🔍 *Active Projects & Teams*\n──────────────────────────\n🔥 = Matches your skills\n\n`;
+
         return {
             type: 'list',
             text: (
-                `🔍 *Active Collaboration Requests*\n\n` +
-                `Projects marked with 🔥 match your skills.\n\n` +
+                titleText +
                 requests.map((req, i) =>
-                    `*${i + 1}. ${req.title}*\n` +
-                    `🛠 ${req.requiredSkills.join(', ')}\n` +
-                    `👤 ${req.creator.name} · 📍 ${req.creator.profile?.city || 'Remote'}`
-                ).join('\n\n')
+                    `*${i + 1}. ${req.title}*${!isMyPosts && req.requiredSkills.some((s: string) => userSkills.includes(s)) ? ' 🔥' : ''}\n` +
+                    `   🛠 ${req.requiredSkills.join(', ')}\n` +
+                    (isMyPosts 
+                        ? `   👥 ${req._count?.applications || 0} Applications pending\n   _Tap options to manage or close_`
+                        : `   👤 ${req.creator.name} · 📍 ${req.creator.profile?.city || 'Remote'}\n   👥 ${req._count?.applications || 0} Applicants`
+                    )
+                ).join('\n\n') +
+                `\n\n──────────────────────────\n` +
+                `_Select a project from the menu_`
             ),
-            buttonText: 'View Projects',
-            sections: [{ title: 'Available Projects', rows }]
+            buttonText: isMyPosts ? 'Manage Posts' : 'View Projects',
+            sections: [{ title: isMyPosts ? 'Your Projects' : 'Available Projects', rows }]
         };
     }
 
     static teammateDetail(req: any, isOwner: boolean): any {
         const text = (
-            `📢 *${req.title}*\n` +
+            `📋 *${req.title}*\n` +
             `──────────────────────────\n\n` +
-            `${req.description}\n\n` +
-            `🛠 *Required Skills:* ${req.requiredSkills.join(', ')}\n` +
-            `👤 *Posted by:* ${req.creator.name}\n` +
-            `📍 *Location:* ${req.creator.profile?.city || 'Remote'}\n\n` +
-            (isOwner ? `_This is YOUR post. You can close it below._` : `_Interested? Apply now or chat with the poster._`)
+            `📝 *Project Details*\n${req.description}\n\n` +
+            `🛠 *Tools & Skills*\n${req.requiredSkills.join(', ')}\n\n` +
+            `👤 *Posted by*\n${req.creator.name} (📍 ${req.creator.profile?.city || 'Remote'})\n\n` +
+            `──────────────────────────\n` +
+            (isOwner ? `_This is YOUR post. You can close it below._` : `_Interested in this? Apply now or chat directly with the poster._`)
         );
 
         const buttons = isOwner
@@ -482,6 +518,31 @@ export class MessageBuilder {
             type: 'buttons',
             text,
             buttons: [...buttons, { id: 'team_browse', title: '↩ Back' }]
+        };
+    }
+
+    static teammatePostPreview(title: string, desc: string, skills: string[]): any {
+        return {
+            type: 'list',
+            text: (
+                `🚀 *Preview Your Post*\n` +
+                `──────────────────────────\n\n` +
+                `*Title*: ${title}\n` +
+                `*Description*: ${desc}\n` +
+                `*Skills*: ${skills.join(', ')}\n\n` +
+                `──────────────────────────\n` +
+                `Review your details above. What would you like to do?`
+            ),
+            buttonText: 'Action',
+            sections: [
+                {
+                    title: 'Post Options',
+                    rows: [
+                        { id: 'post_confirm', title: '✅ Post it Now',    description: 'Publish your request to the hub' },
+                        { id: 'post_cancel',  title: '❌ Cancel & Delete', description: 'Discard this draft' }
+                    ]
+                }
+            ]
         };
     }
 }
