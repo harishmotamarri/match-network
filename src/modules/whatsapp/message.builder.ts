@@ -4,14 +4,14 @@ export class MessageBuilder {
     static welcome(name?: string): any {
         return name
             ? this.mainMenu(`👋 Welcome back, *${name}*!`)
-            : `👋 *Welcome to Match Network!*\n\nThe professional networking platform built for builders, founders & collaborators.\n\nLet's get you started — what's your *full name*?`;
+            : `👋 *Welcome to Spark Network!*\n\nThe professional networking platform built for builders, founders & collaborators.\n\nLet's get you started — what's your *full name*?`;
     }
 
     // ── MAIN MENU — Interactive List ──────────────────────────────────────────
     static mainMenu(prefixText?: string): any {
         const bodyText = prefixText
             ? `${prefixText}\n\nWhat would you like to do next?`
-            : `🚀 *Match Network*\n\nYour professional network is one tap away. You can also chat with *Spark AI* anytime by typing below!`;
+            : `🚀 *Spark Network*\n\nYour professional network is one tap away. You can also chat with *Spark AI* anytime by typing below!`;
         return {
             type: 'list',
             text: bodyText,
@@ -23,14 +23,14 @@ export class MessageBuilder {
                         { id: '1', title: '🔍 Find Matches',       description: 'Discover your next collaborator' },
                         { id: '2', title: '🤝 My Connections',     description: 'View your network' },
                         { id: '3', title: '📬 Pending Requests',   description: 'Respond to incoming requests' },
+                        { id: '4', title: '🧑‍🤝‍🧑 Find Teammates',   description: 'Find team members for projects' },
                     ]
                 },
                 {
                     title: 'Account & Profile',
                     rows: [
-                        { id: '4', title: '📅 Update Availability', description: 'Show if you\'re open to connect' },
-                        { id: '5', title: '✨ Edit Profile',        description: 'Update your skills & info' },
-                        { id: '6', title: '🧑‍🤝‍🧑 Find Teammates',   description: 'Find team members for projects' },
+                        { id: '5', title: '📅 Update Availability', description: 'Show if you\'re open to connect' },
+                        { id: '6', title: '✨ Edit Profile',        description: 'Update your skills & info' },
                         { id: '7', title: '🤖 Chat with Spark AI',  description: 'Ask career advice or networking tips' },
                     ]
                 }
@@ -53,7 +53,7 @@ export class MessageBuilder {
             type: 'list',
             text: (
                 `🎉 *Welcome, ${name}!*\n\n` +
-                `Let's build your Match Network profile. This takes about 1 minute and helps us find you the *perfect matches*.\n\n` +
+                `Let's build your Spark Network profile. This takes about 1 minute and helps us find you the *perfect matches*.\n\n` +
                 `First, what's your experience level?`
             ),
             buttonText: 'Select Level',

@@ -219,9 +219,9 @@ export class BotHandler {
             case '1': return this.startFindMatches(session);
             case '2': return this.showMyConnections(session);
             case '3': return this.showPendingRequests(session);
-            case '4': return this.startUpdateAvailability(session);
-            case '5': return this.startEditProfile(session);
-            case '6': return this.startTeammateHub(session);
+            case '4': return this.startTeammateHub(session);
+            case '5': return this.startUpdateAvailability(session);
+            case '6': return this.startEditProfile(session);
             case '7': return this.startAiChat(session);
             default:
                 if (session.userId) {
@@ -671,7 +671,7 @@ export class BotHandler {
         // Send WhatsApp reply
         await notificationService.notifyReplyReceived(
             picked.requester.phoneNumber,
-            session.tempData?.userName || 'A Match Network user',
+            session.tempData?.userName || 'A Spark Network user',
             msg
         );
 
@@ -710,7 +710,7 @@ export class BotHandler {
 
     private helpMessage(): any {
         return MessageBuilder.mainMenu(
-            `ℹ️ *How to use Match Network*\n\n` +
+            `ℹ️ *How to use Spark Network*\n\n` +
             `• *1–7* — Select a menu option\n` +
             `• *menu* or *hi* — Return to main menu\n` +
             `• *0* or *cancel* — Exit any flow\n` +
@@ -758,7 +758,7 @@ export class BotHandler {
                 messages: [
                     {
                         role: 'system',
-                        content: `You are Spark, the Networking Concierge for Match Network — a professional platform on WhatsApp.
+                        content: `You are Spark, the Networking Concierge for Spark Network — a professional platform on WhatsApp.
                         
 Your goal: Help users connect, collaborate, and grow their professional network. Be proactive, results-oriented, and encouraging.
 
@@ -772,9 +772,9 @@ PLATFORM ACTIONS:
 - Tap *1* → Search for people with specific skills
 - Tap *2* → Manage your network connections
 - Tap *3* → View pending requests
-- Tap *4* → Update availability
-- Tap *5* → Edit profile
-- Tap *6* → Find teammates for projects
+- Tap *4* → Find teammates for projects
+- Tap *5* → Update availability
+- Tap *6* → Edit profile
 
 YOUR EXTENDED CAPABILITIES:
 1. **Suggest Connections**: Proactively suggest meeting the real people listed in the "COMMUNITY SNEAK PEEK". Mention them by name.
@@ -927,7 +927,16 @@ STRICT FORMATTING RULES:
 
     // ── TEAMMATES ─────────────────────────────────────────────────────────────
     private async startTeammateHub(session: BotSession): Promise<any> {
-        await sessionManager.patch(session.phoneNumber, { state: 'TEAMMATE_HUB' });
+        // Load user name so it's available throughout all teammate sub-flows
+        const user = await prisma.user.findUnique({
+            where: { id: session.userId! },
+            select: { name: true }
+        });
+
+        await sessionManager.patch(session.phoneNumber, {
+            state: 'TEAMMATE_HUB',
+            tempData: { ...session.tempData, userName: user?.name || session.tempData?.userName }
+        });
         return MessageBuilder.teammateHub();
     }
 
@@ -935,9 +944,9 @@ STRICT FORMATTING RULES:
         if (msg === '0') return this.goToMenu(session);
 
         const choice = msg.toLowerCase();
-        if (choice === 'team_browse' || choice === '1') return this.browseTeammateRequests(session);
-        if (choice === 'team_post' || choice === '2') return this.startTeammatePost(session);
-        if (choice === 'team_my' || choice === '3') return this.showMyTeammatePosts(session);
+        if (choice === 'team_browse' || choice === '1' || choice.includes('browse')) return this.browseTeammateRequests(session);
+        if (choice === 'team_post' || choice === '2' || choice.includes('post')) return this.startTeammatePost(session);
+        if (choice === 'team_my' || choice === '3' || choice.includes('my')) return this.showMyTeammatePosts(session);
 
         return MessageBuilder.teammateHub();
     }
@@ -1029,7 +1038,8 @@ STRICT FORMATTING RULES:
     }
 
     private async handleTeammateBrowsePick(session: BotSession, msg: string): Promise<any> {
-        if (msg === '0') return this.startTeammateHub(session);
+        if (msg === '0' || msg === 'back') return this.startTeammateHub(session);
+        if (msg === 'team_post') return this.startTeammatePost(session);
 
         const requests = session.tempData?.browsedRequests || [];
         const index = msg.startsWith('req_') ? parseInt(msg.replace('req_', ''), 10) : parseInt(msg, 10) - 1;
@@ -1059,12 +1069,18 @@ STRICT FORMATTING RULES:
         if (msg === 'req_apply' || msg === '1') {
             await teammateService.applyToRequest(selectedProjectId, session.userId!);
             
-            // Notify Poster
+            // Notify Poster — use session userName or fall back to DB lookup
+            let applicantName = session.tempData?.userName;
+            if (!applicantName) {
+                const self = await prisma.user.findUnique({ where: { id: session.userId! }, select: { name: true } });
+                applicantName = self?.name || 'A builder';
+            }
+
             const poster = await prisma.user.findUnique({ where: { id: posterId } });
             if (poster) {
                 await notificationService.notifyTeammateApplication(
                     poster.phoneNumber,
-                    session.tempData?.userName || 'A builder',
+                    applicantName,
                     "Interested in your project!"
                 );
             }

@@ -27,7 +27,7 @@ export class NotificationService {
         const message =
             `💬 *Message from ${senderName}* regarding your request:\n\n` +
             `"${messageContent}"\n\n` +
-            `_You can reply back by using the Match Network bot._`;
+            `_You can reply back by using the Spark Network bot._`;
 
         await this.send(receiverPhone, message, 'connection_reply');
     }
@@ -64,7 +64,7 @@ export class NotificationService {
         note?: string
     ): Promise<void> {
         const message =
-            `📬 *${requesterName}* wants to connect with you on Match Network!\n\n` +
+            `📬 *${requesterName}* wants to connect with you on Spark Network!\n\n` +
             (note ? `💬 "${note}"\n\n` : '') +
             `_Reply *menu* → Pending requests to respond._`;
 

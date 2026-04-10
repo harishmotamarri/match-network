@@ -22,7 +22,7 @@ export class SMSService {
         try {
             // Customize this request based on your provider's API (e.g. Gupshup, Twilio, Textlocal)
             // This example uses a common POST structure:
-            const message = `🔐 Your Match Network OTP is ${otp}. This code is valid for 5 mins. Do not share it.`;
+            const message = `🔐 Your Spark Network OTP is ${otp}. This code is valid for 5 mins. Do not share it.`;
 
             const response = await axios.post(smsGatewayUrl, {
                 apiKey: smsApiKey,
