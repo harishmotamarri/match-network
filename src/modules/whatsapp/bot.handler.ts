@@ -75,6 +75,11 @@ export class BotHandler {
         // ── GLOBAL ESCAPES — work from ANY state ─────────────────────────────────
         if (['menu', 'home', 'hi', 'hello', 'hey'].includes(msg)) {
             if (session.userId) return this.goToMenu(session);
+            
+            if (session.state === 'AWAITING_OTP') {
+                return `⏳ We already sent a verification code to your number.\n\nPlease reply with the 6-digit code to continue.\n\n_Type *cancel* to request a new code._`;
+            }
+
             return this.handleIdle(session, phone, msg);
         }
 
@@ -136,7 +141,7 @@ export class BotHandler {
                 state: 'AWAITING_OTP',
                 tempData: { phoneNumber: phone, isExisting: true },
             });
-            return MessageBuilder.otpSent(phone);
+            return; // OTP is already sent via WhatsApp in authService
         }
 
         await sessionManager.patch(phone, { state: 'AWAITING_NAME' });
@@ -144,7 +149,7 @@ export class BotHandler {
     }
 
     // ── NEW USER: collect name ────────────────────────────────────────────────
-    private async handleName(session: BotSession, msg: string): Promise<string> {
+    private async handleName(session: BotSession, msg: string): Promise<string | any> {
         if (msg.length < 2 || msg.length > 100) {
             return (
                 `⚠️ *Invalid Name*\n\n` +
@@ -161,7 +166,7 @@ export class BotHandler {
             tempData: { name: msg, phoneNumber: phone, isExisting: false },
         });
 
-        return MessageBuilder.otpSent(phone);
+        return; // OTP is already sent via WhatsApp in authService
     }
 
     // ── OTP ───────────────────────────────────────────────────────────────────

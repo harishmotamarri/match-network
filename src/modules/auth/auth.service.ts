@@ -19,7 +19,7 @@ export class AuthService {
         try {
             // Clean phone number for Meta (ensure no '+' and only digits)
             const formattedPhone = phoneNumber.replace(/\D/g, '');
-            const message = `🔐 *Match Network*\n\nYour login code is: *${otp}*\n\nThis code is valid for 5 minutes. Do not share it with anyone.`;
+            const message = `🔐 *Match Network Verification*\n\nYour 6-digit code is: *${otp}*\n\n_Please reply with this code to continue._\n\n_Do not share it with anyone. Valid for 5 minutes._`;
             
             await sendTextMessage(formattedPhone, message);
             logger.info({ phoneNumber }, '✅ OTP sent via WhatsApp');
