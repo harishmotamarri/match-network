@@ -33,6 +33,29 @@ const EXPERIENCE_MAP: Record<string, 'STUDENT' | 'JUNIOR' | 'MID' | 'SENIOR' | '
     '1': 'STUDENT', '2': 'JUNIOR', '3': 'MID', '4': 'SENIOR', '5': 'EXPERT',
 };
 
+function getSafeBotErrorMessage(err: unknown): string {
+    const candidate = err as { code?: string; message?: string } | undefined;
+    const code = candidate?.code;
+    const message = (candidate?.message || '').toLowerCase();
+
+    const isSchemaSyncError =
+        code === 'P2021' ||
+        code === 'P2022' ||
+        (message.includes('teammate_requests') && message.includes('does not exist'));
+
+    if (isSchemaSyncError) {
+        return (
+            `⚠️ *Service is syncing updates*\n\n` +
+            `The teammate hub is temporarily unavailable. Please try again in a minute or type *menu*.`
+        );
+    }
+
+    return (
+        `⚠️ *Something went wrong*\n\n` +
+        `Please try again or type *menu* to start over.`
+    );
+}
+
 export class BotHandler {
 
     async handle(phone: string, incomingMessage: string): Promise<string | any> {
@@ -62,11 +85,7 @@ export class BotHandler {
             return await this.route(session, msg, phone);
         } catch (err: any) {
             logger.error({ err, phone }, 'Bot handler error');
-            return (
-                `⚠️ *Something went wrong*\n\n` +
-                `_${err.message || 'An unexpected error occurred.'}_\n\n` +
-                `Please try again or type *menu* to start over.`
-            );
+            return getSafeBotErrorMessage(err);
         }
     }
 

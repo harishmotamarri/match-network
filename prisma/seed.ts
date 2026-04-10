@@ -121,8 +121,66 @@ async function main() {
         }
     }
 
-    console.log(`✅ Seeding complete — ${created} created, ${skipped} already existed`);
+    console.log(`✅ Seeding skills complete — ${created} created, ${skipped} already existed`);
+
+    console.log('👤 Seeding dummy users and teammate requests...');
+    const dummyUsers = [
+        {
+            phoneNumber: '+1234567890',
+            name: 'John Doe',
+            email: 'john@example.com',
+            isVerified: true,
+        },
+        {
+            phoneNumber: '+0987654321',
+            name: 'Jane Smith',
+            email: 'jane@example.com',
+            isVerified: true,
+        }
+    ];
+
+    for (const userData of dummyUsers) {
+        const user = await prisma.user.upsert({
+            where: { phoneNumber: userData.phoneNumber },
+            update: {},
+            create: userData,
+        });
+
+        const projects = [
+            {
+                title: `${user.name}'s Awesome Project`,
+                description: 'This is a test project created via seed.ts to verify the browse projects feature.',
+                requiredSkills: ['JavaScript', 'React', 'Node.js'],
+                status: 'OPEN' as const,
+            },
+            {
+                title: `Startup Idea by ${user.name}`,
+                description: 'Looking for co-founders to build the next big thing in AI and networking.',
+                requiredSkills: ['Python', 'Machine Learning', 'TypeScript'],
+                status: 'OPEN' as const,
+            }
+        ];
+
+        for (const project of projects) {
+            const existingProject = await prisma.teammateRequest.findFirst({
+                where: { title: project.title, creatorId: user.id }
+            });
+
+            if (!existingProject) {
+                await prisma.teammateRequest.create({
+                    data: {
+                        ...project,
+                        creatorId: user.id
+                    }
+                });
+                console.log(`🚀 Created project: ${project.title}`);
+            }
+        }
+    }
+
     console.log(`📊 Total skills in DB: ${await prisma.skill.count()}`);
+    console.log(`📊 Total users in DB: ${await prisma.user.count()}`);
+    console.log(`📊 Total projects in DB: ${await prisma.teammateRequest.count()}`);
 }
 
 main()

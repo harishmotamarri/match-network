@@ -8,32 +8,32 @@ datasource db {
 }
 
 model User {
-  id                  String         @id @default(uuid())
-  phoneNumber         String         @unique @map("phone_number")
-  whatsappId          String?        @unique @map("whatsapp_id")
+  id                  String                @id @default(uuid())
+  phoneNumber         String                @unique @map("phone_number")
+  whatsappId          String?               @unique @map("whatsapp_id")
   name                String
-  email               String?        @unique
-  role                UserRole       @default(USER)
-  isVerified          Boolean        @default(false) @map("is_verified")
-  isActive            Boolean        @default(true) @map("is_active")
-  isPremium           Boolean        @default(false) @map("is_premium")
-  createdAt           DateTime       @default(now()) @map("created_at")
-  updatedAt           DateTime       @updatedAt @map("updated_at")
+  email               String?               @unique
+  role                UserRole              @default(USER)
+  isVerified          Boolean               @default(false) @map("is_verified")
+  isActive            Boolean               @default(true) @map("is_active")
+  isPremium           Boolean               @default(false) @map("is_premium")
+  createdAt           DateTime              @default(now()) @map("created_at")
+  updatedAt           DateTime              @updatedAt @map("updated_at")
   botSessions         BotSession[]
-  receivedConnections Connection[]   @relation("Receiver")
-  sentConnections     Connection[]   @relation("Requester")
-  events              Event[]        @relation("EventCreator")
+  receivedMessages    ChatMessage[]         @relation("ReceivedMessages")
+  sentMessages        ChatMessage[]         @relation("SentMessages")
+  receivedConnections Connection[]          @relation("Receiver")
+  sentConnections     Connection[]          @relation("Requester")
+  events              Event[]               @relation("EventCreator")
   interests           Interest[]
   notifications       Notification[]
   profile             Profile?
-  ratingsReceived     Rating[]       @relation("Rated")
-  ratingsGiven        Rating[]       @relation("Rater")
+  ratingsReceived     Rating[]              @relation("Rated")
+  ratingsGiven        Rating[]              @relation("Rater")
   subscription        Subscription?
-  userSkills          UserSkill[]
-  sentMessages        ChatMessage[]  @relation("SentMessages")
-  receivedMessages    ChatMessage[]  @relation("ReceivedMessages")
+  applicationsSent    TeammateApplication[]
   teammateRequests    TeammateRequest[]
-  applicationsSent     TeammateApplication[]
+  userSkills          UserSkill[]
 
   @@map("users")
 }
@@ -192,46 +192,43 @@ model BroadcastMessage {
 }
 
 model ChatMessage {
-  id          String   @id @default(uuid())
-  senderId    String   @map("sender_id")
-  receiverId  String   @map("receiver_id")
-  body        String   @db.Text
-  isRead      Boolean  @default(false) @map("is_read")
-  createdAt   DateTime @default(now()) @map("created_at")
-
-  sender      User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
-  receiver    User     @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  id         String   @id @default(uuid())
+  senderId   String   @map("sender_id")
+  receiverId String   @map("receiver_id")
+  body       String
+  isRead     Boolean  @default(false) @map("is_read")
+  createdAt  DateTime @default(now()) @map("created_at")
+  receiver   User     @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  sender     User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
 
   @@index([senderId, receiverId])
   @@map("chat_messages")
 }
 
 model TeammateRequest {
-  id              String                @id @default(uuid())
-  creatorId       String                @map("creator_id")
-  title           String
-  description     String                @db.Text
-  requiredSkills  String[]              @map("required_skills")
-  status          ProjectStatus         @default(OPEN)
-  createdAt       DateTime              @default(now()) @map("created_at")
-  updatedAt       DateTime              @updatedAt @map("updated_at")
-
-  creator         User                  @relation(fields: [creatorId], references: [id], onDelete: Cascade)
-  applications    TeammateApplication[]
+  id             String                @id @default(uuid())
+  creatorId      String                @map("creator_id")
+  title          String
+  description    String
+  requiredSkills String[]              @map("required_skills")
+  status         ProjectStatus         @default(OPEN)
+  createdAt      DateTime              @default(now()) @map("created_at")
+  updatedAt      DateTime              @updatedAt @map("updated_at")
+  applications   TeammateApplication[]
+  creator        User                  @relation(fields: [creatorId], references: [id], onDelete: Cascade)
 
   @@map("teammate_requests")
 }
 
 model TeammateApplication {
-  id              String                @id @default(uuid())
-  requestId       String                @map("request_id")
-  applicantId     String                @map("applicant_id")
-  message         String?               @db.Text
-  status          ApplicationStatus     @default(PENDING)
-  createdAt       DateTime              @default(now()) @map("created_at")
-
-  request         TeammateRequest       @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  applicant       User                  @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  id          String            @id @default(uuid())
+  requestId   String            @map("request_id")
+  applicantId String            @map("applicant_id")
+  message     String?
+  status      ApplicationStatus @default(PENDING)
+  createdAt   DateTime          @default(now()) @map("created_at")
+  applicant   User              @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  request     TeammateRequest   @relation(fields: [requestId], references: [id], onDelete: Cascade)
 
   @@map("teammate_applications")
 }
