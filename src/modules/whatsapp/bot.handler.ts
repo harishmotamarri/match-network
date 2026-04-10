@@ -981,19 +981,37 @@ STRICT FORMATTING RULES:
     private async handleTeammatePostSkills(session: BotSession, msg: string): Promise<any> {
         if (msg === '0') return this.startTeammateHub(session);
 
-        const skills = await skillsService.sanitizeSkills(msg);
-        if (skills.length === 0) {
-            return `⚠️ *No Skills Recognized*\n\nPlease provide at least one valid skill separated by commas.\n_Example: React, UI Design_`;
+        const { valid, irrelevant } = await skillsService.validateTeammateSkills(msg);
+
+        // If nothing valid at all
+        if (valid.length === 0) {
+            const rejectedList = irrelevant.length > 0
+                ? `\n\n❌ *Not accepted:* _${irrelevant.join(', ')}_\n_These are job titles or vague phrases, not specific skills._`
+                : '';
+            return (
+                `⚠️ *Irrelevant Skills Entered*\n\n` +
+                `Please enter specific *professional or technical skills* needed for your project.${rejectedList}\n\n` +
+                `_Examples: React, Python, UI/UX Design, Machine Learning, Marketing_\n\n` +
+                `──────────────────────────\n` +
+                `Try again with valid skill names.`
+            );
         }
 
         const { projectTitle, projectDesc } = session.tempData ?? {};
 
-        await sessionManager.patch(session.phoneNumber, { 
+        await sessionManager.patch(session.phoneNumber, {
             state: 'TEAMMATE_POST_CONFIRM',
-            tempData: { ...session.tempData, projectSkills: skills }
+            tempData: { ...session.tempData, projectSkills: valid }
         });
 
-        return MessageBuilder.teammatePostPreview(projectTitle, projectDesc, skills);
+        const preview = MessageBuilder.teammatePostPreview(projectTitle, projectDesc, valid);
+
+        // If some were valid but some irrelevant, prepend warning note to preview text
+        if (irrelevant.length > 0 && preview && typeof preview === 'object' && preview.text) {
+            preview.text = `⚠️ _Skipped (not valid skills): ${irrelevant.join(', ')}_\n\n` + preview.text;
+        }
+
+        return preview;
     }
 
     private async handleTeammatePostConfirm(session: BotSession, msg: string): Promise<any> {

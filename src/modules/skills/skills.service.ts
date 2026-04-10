@@ -11,20 +11,23 @@ export class SkillsService {
         try {
             const response = await this.groq.chat.completions.create({
                 model: 'llama-3.3-70b-versatile',
-                max_tokens: 150,
-                temperature: 0, // Deterministic for validation
+                max_tokens: 200,
+                temperature: 0,
                 messages: [
                     {
                         role: 'system',
-                        content: `You are a professional skill extractor for a networking platform. 
-Input: A comma-separated or raw text list of things the user claims are skills.
-Task: Extract ONLY valid professional, technical, or soft/hard business skills. 
+                        content: `You are a strict professional skill validator for a networking platform.
+Input: A text string the user claims contains skills.
+Task: Extract ONLY genuine professional, technical, or business skills from the input.
 Rules:
-- Remove conversational filler, personal activities (sleeping, eating), or "junk" words.
-- Standardize names (e.g. "JS" -> "JavaScript", "coding" -> "Software Development").
+- STRICT: Do NOT invent or infer skills not explicitly mentioned. If something is not clearly a skill, exclude it.
+- Standardize names (e.g. "JS" -> "JavaScript", "ML" -> "Machine Learning").
 - Maximum 10 skills.
-- Return ONLY a JSON array of strings. No explanation.
-Example: "I know React, Python, and I love sleeping" -> ["React", "Python", "Software Development"]`
+- If the input contains NO valid professional skills at all, return {"skills": []}.
+- Do NOT include job titles, project names, startup names, vague phrases like "co-founder" as skills.
+- Return ONLY a JSON object with key "skills" containing an array of strings. No explanation.
+Example: "I know React, Python, and I love sleeping" -> {"skills": ["React", "Python"]}
+Example: "AI startup co-founder" -> {"skills": []}`
                     },
                     {
                         role: 'user',
@@ -36,16 +39,61 @@ Example: "I know React, Python, and I love sleeping" -> ["React", "Python", "Sof
 
             const content = response.choices[0]?.message?.content || '{}';
             const parsed = JSON.parse(content);
-            // The AI might return { "skills": [...] } or similar based on prompt
             const skills = Array.isArray(parsed) ? parsed : (parsed.skills || []);
-            
+
             return skills
                 .map((s: string) => s.trim())
-                .filter((s: string) => s.length > 1 && s.length < 50);
+                .filter((s: string) => s.length > 1 && s.length < 60);
         } catch (err) {
             console.error('Skill sanitization failed, falling back to raw split:', err);
-            // Fallback to basic comma split if AI fails
             return rawInput.split(',').map(s => s.trim()).filter(s => s.length > 0);
+        }
+    }
+
+    /**
+     * Strict skill validator for teammate posts. Rejects irrelevant inputs clearly.
+     * Returns { valid: string[], irrelevant: string[] }
+     */
+    async validateTeammateSkills(rawInput: string): Promise<{ valid: string[]; irrelevant: string[] }> {
+        if (!rawInput.trim()) return { valid: [], irrelevant: [] };
+
+        try {
+            const response = await this.groq.chat.completions.create({
+                model: 'llama-3.3-70b-versatile',
+                max_tokens: 300,
+                temperature: 0,
+                messages: [
+                    {
+                        role: 'system',
+                        content: `You are a strict skill validator for a startup/hackathon co-founder platform.
+The user is listing REQUIRED SKILLS for a project post (what skills they need in a teammate).
+Input: A comma-separated list of skills entered by the user.
+Task: Classify each item as either a valid professional/technical skill or irrelevant.
+Rules:
+- VALID: specific technical skills (React, Python, ML), business skills (Marketing, Finance), design skills (UI/UX, Figma).
+- IRRELEVANT: job titles ("Developer", "Co-founder"), vague phrases ("startup experience"), project names, personality traits.
+- Standardize valid skill names ("JS" -> "JavaScript", "ML" -> "Machine Learning").
+- Return JSON: {"valid": [...], "irrelevant": [...]}
+Example input: "React, co-founder, Python, startup experience"
+Example output: {"valid": ["React", "Python"], "irrelevant": ["co-founder", "startup experience"]}`
+                    },
+                    { role: 'user', content: rawInput }
+                ],
+                response_format: { type: 'json_object' }
+            });
+
+            const content = response.choices[0]?.message?.content || '{}';
+            const parsed = JSON.parse(content);
+
+            const valid = (Array.isArray(parsed.valid) ? parsed.valid : []).map((s: string) => s.trim()).filter((s: string) => s.length > 1);
+            const irrelevant = (Array.isArray(parsed.irrelevant) ? parsed.irrelevant : []).map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+
+            return { valid, irrelevant };
+        } catch (err) {
+            console.error('Teammate skill validation failed:', err);
+            // Fallback: treat all as valid
+            const fallback = rawInput.split(',').map(s => s.trim()).filter(s => s.length > 0);
+            return { valid: fallback, irrelevant: [] };
         }
     }
 
