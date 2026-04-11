@@ -143,6 +143,23 @@ export class TeammateService {
     }
 
     async applyToRequest(requestId: string, applicantId: string, message?: string) {
+        const request = await prisma.teammateRequest.findUnique({
+            where: { id: requestId },
+            select: { creatorId: true, status: true }
+        });
+
+        if (!request) {
+            throw new Error('TEAMMATE_REQUEST_NOT_FOUND');
+        }
+
+        if (request.creatorId === applicantId) {
+            throw new Error('CANNOT_APPLY_OWN_REQUEST');
+        }
+
+        if (request.status !== 'OPEN') {
+            throw new Error('TEAMMATE_REQUEST_CLOSED');
+        }
+
         // Check if already applied
         const existing = await prisma.teammateApplication.findFirst({
             where: { requestId, applicantId }

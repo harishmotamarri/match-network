@@ -509,11 +509,11 @@ export class MessageBuilder {
 
         const buttons = isOwner
             ? [
-                { id: 'req_close', title: '🚫 Close Request' },
+                { id: 'req_close', title: '🚫 Close Project' },
                 { id: 'req_remove', title: '🗑 Remove Post' }
             ]
             : [
-                { id: 'req_apply', title: '✅ Apply/Join' },
+                { id: 'req_apply', title: '✅ Request to Join' },
                 { id: 'req_chat', title: '💬 Chat with Poster' }
             ];
 

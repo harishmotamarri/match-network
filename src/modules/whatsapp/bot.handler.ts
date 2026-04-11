@@ -1105,12 +1105,23 @@ STRICT FORMATTING RULES:
 
     private async handleTeammateDetailAction(session: BotSession, msg: string): Promise<any> {
         const { selectedProjectId, selectedProjectTitle, posterId } = session.tempData ?? {};
+        const isOwner = posterId === session.userId;
 
-        if (msg === 'team_browse' || msg === 'back') {
+        if (!selectedProjectId || !posterId) {
             return session.tempData?.isMyPosts ? this.showMyTeammatePosts(session) : this.browseTeammateRequests(session);
         }
 
-        if (msg === 'req_remove_cancel') {
+        // Numeric fallback maps depend on ownership:
+        // owner: 1=close, 2=remove | non-owner: 1=apply, 2=chat
+        let action = msg;
+        if (msg === '1') action = isOwner ? 'req_close' : 'req_apply';
+        if (msg === '2') action = isOwner ? 'req_remove' : 'req_chat';
+
+        if (action === 'team_browse' || action === 'back') {
+            return session.tempData?.isMyPosts ? this.showMyTeammatePosts(session) : this.browseTeammateRequests(session);
+        }
+
+        if (action === 'req_remove_cancel') {
             const fullReq = await teammateService.getRequestById(selectedProjectId);
             if (!fullReq) {
                 return session.tempData?.isMyPosts ? this.showMyTeammatePosts(session) : this.browseTeammateRequests(session);
@@ -1118,8 +1129,26 @@ STRICT FORMATTING RULES:
             return MessageBuilder.teammateDetail(fullReq, fullReq.creatorId === session.userId);
         }
 
-        if (msg === 'req_apply' || msg === '1') {
-            await teammateService.applyToRequest(selectedProjectId, session.userId!);
+        if (action === 'req_apply') {
+            if (isOwner) {
+                return `⚠️ *You can't request your own project.*\n\nUse *Close Project* or *Remove Post* to manage it.`;
+            }
+
+            try {
+                await teammateService.applyToRequest(selectedProjectId, session.userId!);
+            } catch (err: any) {
+                const errorMessage = (err?.message || '').toLowerCase();
+                if (errorMessage.includes('cannot_apply_own_request')) {
+                    return `⚠️ *You can't request your own project.*\n\nUse *Close Project* or *Remove Post* to manage it.`;
+                }
+                if (errorMessage.includes('teammate_request_closed')) {
+                    return `⚠️ *This project is already closed.*\n\nPlease browse other active projects.`;
+                }
+                if (errorMessage.includes('teammate_request_not_found')) {
+                    return `⚠️ *This project is no longer available.*\n\nPlease browse other active projects.`;
+                }
+                throw err;
+            }
             
             // Notify Poster — use session userName or fall back to DB lookup
             let applicantName = session.tempData?.userName;
@@ -1139,21 +1168,24 @@ STRICT FORMATTING RULES:
             return `✅ *Application Sent!*\n\nThe poster has been notified. They can start a chat with you if interested.`;
         }
 
-        if (msg === 'req_chat' || msg === '2') {
+        if (action === 'req_chat') {
+            if (isOwner) {
+                return `ℹ️ *This is your own project post.*\n\nYou can *Close Project* or *Remove Post* from this screen.`;
+            }
             return this.startChat(session, posterId);
         }
 
-        if (msg === 'req_close' && posterId === session.userId) {
+        if (action === 'req_close' && isOwner) {
             await teammateService.closeRequest(selectedProjectId, session.userId!);
             await sessionManager.patch(session.phoneNumber, { state: 'MAIN_MENU' });
             return MessageBuilder.mainMenu(`✅ *Project Closed.*\n\nYour post is no longer visible to other builders.`);
         }
 
-        if (msg === 'req_remove' && posterId === session.userId) {
+        if (action === 'req_remove' && isOwner) {
             return MessageBuilder.teammateRemoveConfirm(selectedProjectTitle || 'Untitled Project');
         }
 
-        if (msg === 'req_remove_confirm' && posterId === session.userId) {
+        if (action === 'req_remove_confirm' && isOwner) {
             const deleted = await teammateService.removeRequest(selectedProjectId, session.userId!);
             if (deleted.count === 0) {
                 return `⚠️ *Could not remove this post*\n\nIt may already be removed or you no longer have permission.`;
