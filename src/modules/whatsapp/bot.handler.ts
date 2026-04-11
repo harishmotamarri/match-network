@@ -57,10 +57,13 @@ function getSafeBotErrorMessage(err: unknown): string {
     );
 }
 
+type SparkAudienceSegment = 'FOUNDER' | 'STUDENT' | 'RECRUITER' | 'GENERAL';
+
 export class BotHandler {
 
     async handle(phone: string, incomingMessage: string): Promise<string | any> {
-        const msg = incomingMessage.trim().toLowerCase();
+        const rawMsg = incomingMessage.trim();
+        const msg = rawMsg.toLowerCase();
         const session = await sessionManager.get(phone);
 
         logger.info({ phone, state: session.state, msg }, 'WA message received');
@@ -83,14 +86,14 @@ export class BotHandler {
         }
 
         try {
-            return await this.route(session, msg, phone);
+            return await this.route(session, msg, phone, rawMsg);
         } catch (err: any) {
             logger.error({ err, phone }, 'Bot handler error');
             return getSafeBotErrorMessage(err);
         }
     }
 
-    private async route(session: BotSession, msg: string, phone: string): Promise<string | any> {
+    private async route(session: BotSession, msg: string, phone: string, rawMsg: string): Promise<string | any> {
 
         // ── GLOBAL ESCAPES — work from ANY state ─────────────────────────────────
         if (['menu', 'home', 'hi', 'hello', 'hey'].includes(msg)) {
@@ -126,7 +129,7 @@ export class BotHandler {
             case 'IDLE': return this.handleIdle(session, phone, msg);
             case 'AWAITING_NAME': return this.handleName(session, msg);
             case 'AWAITING_OTP': return this.handleOtp(session, msg);
-            case 'MAIN_MENU': return this.handleMainMenu(session, msg);
+            case 'MAIN_MENU': return this.handleMainMenu(session, msg, rawMsg);
             case 'AWAITING_MATCH_SKILLS': return this.handleMatchSkillSelection(session, msg);
             case 'AWAITING_CONNECTION_TYPE': return this.handleConnectionType(session, msg);
             case 'AWAITING_CONNECTION_NOTE': return this.handleConnectionNote(session, msg);
@@ -234,7 +237,7 @@ export class BotHandler {
 
     // ── MAIN MENU ─────────────────────────────────────────────────────────────
     // ── UPDATED: added case '5' for Edit Profile ──────────────────────────────
-    private async handleMainMenu(session: BotSession, msg: string): Promise<string | any> {
+    private async handleMainMenu(session: BotSession, msg: string, rawMsg: string): Promise<string | any> {
         switch (msg) {
             case '1': return this.startFindMatches(session);
             case '2': return this.showMyConnections(session);
@@ -245,7 +248,7 @@ export class BotHandler {
             case '7': return this.startAiChat(session);
             default:
                 if (session.userId) {
-                    return this.handleAiChat(session, msg);
+                    return this.handleAiChat(session, rawMsg);
                 }
                 return this.goToMenu(session);
         }
@@ -740,6 +743,192 @@ export class BotHandler {
             `_All commands work from anywhere, anytime._`
         );
     }
+
+    private formatSparkAiCard(content: string): string {
+        return (
+            `🤖 *Spark AI Assistant*\n` +
+            `──────────────────────────\n\n` +
+            content +
+            `\n\n──────────────────────────\n` +
+            `_Quick actions: *1* Find Matches · *4* Find Teammates · *6* Edit Profile · *menu*_`
+        );
+    }
+
+    private normalizeSparkAiReply(reply: string): string {
+        return reply
+            .replace(/\r/g, '')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+    }
+
+    private isLowQualitySparkReply(reply: string): boolean {
+        const cleaned = reply.replace(/[\*_`~]/g, '').trim();
+        if (cleaned.length < 28) return true;
+
+        const tokens = cleaned.split(/\s+/).filter(Boolean);
+        if (tokens.length < 8) return true;
+
+        if (/(.)\1{7,}/.test(cleaned)) return true;
+
+        const letterTokens = tokens.filter(token => /[\p{L}]/u.test(token));
+        if (letterTokens.length < Math.max(4, Math.floor(tokens.length * 0.35))) return true;
+
+        const uniqueRatio = new Set(tokens.map(token => token.toLowerCase())).size / tokens.length;
+        return tokens.length >= 12 && uniqueRatio < 0.35;
+    }
+
+    private sparkAiFallback(): string {
+        return this.formatSparkAiCard(
+            `*Direct Answer*\n` +
+            `I can help, but I need a clearer question to give an accurate response.\n\n` +
+            `*Try one of these*\n` +
+            `• _Review my profile and suggest 3 improvements._\n` +
+            `• _Write a message to connect with a frontend developer._\n` +
+            `• _How do I find teammates for a portfolio website project?_`
+        );
+    }
+
+    private detectSparkAudience(user: any): SparkAudienceSegment {
+        if (!user) return 'GENERAL';
+
+        const role = String(user.role || '').toUpperCase();
+        const experience = String(user.profile?.experienceLevel || '').toUpperCase();
+        const skillsText = (user.userSkills || [])
+            .map((s: any) => String(s?.skill?.name || '').toLowerCase())
+            .join(' ');
+        const bioText = String(user.profile?.bio || '').toLowerCase();
+
+        if (role === 'RECRUITER') return 'RECRUITER';
+        if (experience === 'STUDENT') return 'STUDENT';
+
+        const founderSignals = [
+            'founder', 'cofounder', 'co-founder', 'startup', 'entrepreneur',
+            'business development', 'product strategy', 'fundraising'
+        ];
+
+        if (founderSignals.some(signal => skillsText.includes(signal) || bioText.includes(signal))) {
+            return 'FOUNDER';
+        }
+
+        return 'GENERAL';
+    }
+
+    private buildSparkAudienceGuide(audience: SparkAudienceSegment): string {
+        if (audience === 'FOUNDER') {
+            return [
+                '- Audience: Founder/operator.',
+                '- Prioritize execution: hiring, GTM, MVP scoping, fundraising readiness.',
+                '- Include trade-offs, timelines, and owner-like next steps.',
+                '- Keep language crisp, strategic, and ROI-focused.'
+            ].join('\n');
+        }
+
+        if (audience === 'STUDENT') {
+            return [
+                '- Audience: Student or early-career builder.',
+                '- Break advice into simple actionable steps with examples.',
+                '- Focus on portfolio quality, internships, mentorship, and first outreach.',
+                '- Keep tone supportive but practical; avoid jargon.'
+            ].join('\n');
+        }
+
+        if (audience === 'RECRUITER') {
+            return [
+                '- Audience: Recruiter/hiring operator.',
+                '- Prioritize candidate quality, screening signals, response rates, and pipeline speed.',
+                '- Suggest concise sourcing messages and evaluation criteria.',
+                '- Keep tone professional, structured, and outcome-driven.'
+            ].join('\n');
+        }
+
+        return [
+            '- Audience: General professional user.',
+            '- Focus on practical networking, profile upgrades, and high-quality outreach.',
+            '- Keep response specific and immediately actionable.',
+            '- Avoid generic motivation; provide clear steps.'
+        ].join('\n');
+    }
+
+    private toSparkBullets(text: string, limit = 3): string {
+        const compact = text.replace(/\s+/g, ' ').trim();
+        if (!compact) return '';
+
+        const parts = compact
+            .split(/[.!?]\s+/)
+            .map(part => part.trim())
+            .filter(Boolean)
+            .slice(0, limit);
+
+        if (parts.length === 0) {
+            return `• ${compact}`;
+        }
+
+        return parts
+            .map(part => `• ${part}${/[.!?]$/.test(part) ? '' : '.'}`)
+            .join('\n');
+    }
+
+    private ensureSparkResponseStructure(reply: string): string {
+        const hasDirect = /\*direct answer\*/i.test(reply);
+        const hasNextStep = /\*next best step\*/i.test(reply);
+
+        if (hasDirect && hasNextStep) {
+            return reply;
+        }
+
+        const bullets = this.toSparkBullets(reply, 4);
+        return (
+            `*Direct Answer*\n` +
+            `${bullets || '• I can help once you share a specific goal.'}\n\n` +
+            `*Next Best Step*\n` +
+            `• Tap *1* to find relevant matches now, or tap *4* to post/find teammates.`
+        );
+    }
+
+    private buildSparkSystemPrompt(userContext: string, communityContext: string, audienceGuide: string): string {
+        return `You are Spark AI for Spark Network (WhatsApp professional networking app).
+
+Primary objective: give correct, specific, useful answers. Accuracy is more important than style.
+
+Hard rules:
+- Do not invent facts, people, jobs, project outcomes, or platform features.
+- Use only known context below for user/community-specific statements.
+- If data is missing or uncertain, clearly say so and give the safest next step.
+- Keep tone professional, concise, and practical. Avoid filler and hype.
+- If the user asks for a message/template, provide a production-quality draft.
+
+AUDIENCE STYLE GUIDE:
+${audienceGuide}
+
+USER CONTEXT:
+${userContext}
+
+LIVE COMMUNITY CONTEXT:
+${communityContext}
+
+PLATFORM ACTIONS:
+- Tap *1* Find Matches
+- Tap *2* My Connections
+- Tap *3* Pending Requests
+- Tap *4* Find Teammates
+- Tap *5* Update Availability
+- Tap *6* Edit Profile
+- Tap *7* Chat with Spark AI
+
+Output format (always):
+*Direct Answer*
+- 2 to 4 concise, actionable bullet points
+
+*Next Best Step*
+- One exact action the user should take now, including button number(s)
+
+Constraints:
+- 90 to 170 words
+- Use WhatsApp markdown (*bold*, _italic_)
+- 0 or 1 emoji maximum
+- Same language as user input.`;
+    }
+
     // ── AI CHAT ───────────────────────────────────────────────────────────────
     private async startAiChat(session: BotSession): Promise<string> {
         return this.handleAiChat(session, "Hi Spark! I want to start a chat and learn how you can help me with my career and networking.");
@@ -761,53 +950,35 @@ export class BotHandler {
                 matchingService.getSparkRecommendations(session.userId!)
             ]);
 
+            const audience = this.detectSparkAudience(user);
+            const audienceGuide = this.buildSparkAudienceGuide(audience);
+
+            const skills = user?.userSkills?.map(s => s.skill.name).join(', ') || 'none set';
+            const bio = user?.profile?.bio ? user.profile.bio.slice(0, 220) : 'not set';
+            const role = user?.role || 'USER';
+
             const userContext = user
                 ? `Name: ${user.name}, ` +
-                `Skills: ${user.userSkills.map(s => s.skill.name).join(', ') || 'none set'}, ` +
+                `Role: ${role}, ` +
+                `Skills: ${skills}, ` +
                 `Experience: ${user.profile?.experienceLevel || 'not set'}, ` +
-                `City: ${user.profile?.city || 'not set'}`
+                `City: ${user.profile?.city || 'not set'}, ` +
+                `Bio: ${bio}`
                 : 'New user';
 
             const communityContext = topMembers.length > 0
                 ? topMembers.map(m => `• ${m.name} (${m.city}) - Skills: ${m.skills.join(', ')}`).join('\n')
-                : 'Searching for top builders...';
+                : 'No live suggestions available right now.';
 
             const response = await client.chat.completions.create({
                 model: 'llama-3.3-70b-versatile',
                 max_tokens: 350,
+                temperature: 0.2,
+                top_p: 0.9,
                 messages: [
                     {
                         role: 'system',
-                        content: `You are Spark, the Networking Concierge for Spark Network — a professional platform on WhatsApp.
-                        
-Your goal: Help users connect, collaborate, and grow their professional network. Be proactive, results-oriented, and encouraging.
-
-USER CONTEXT:
-${userContext}
-
-LIVE COMMUNITY SNEAK PEEK (PEOPLE THE USER SHOULD MEET):
-${communityContext}
-
-PLATFORM ACTIONS:
-- Tap *1* → Search for people with specific skills
-- Tap *2* → Manage your network connections
-- Tap *3* → View pending requests
-- Tap *4* → Find teammates for projects
-- Tap *5* → Update availability
-- Tap *6* → Edit profile
-
-YOUR EXTENDED CAPABILITIES:
-1. **Suggest Connections**: Proactively suggest meeting the real people listed in the "COMMUNITY SNEAK PEEK". Mention them by name.
-2. **Icebreaker Generation**: If a user asks how to connect, write 2 tailored message templates for them. One professional, one casual.
-3. **Outreach Assistance**: Help users draft messages for specific roles (e.g. "Draft a message for a senior dev").
-4. **Strategy Advice**: Suggest which skills to add or how to improve their bio based on their background.
-
-STRICT FORMATTING RULES:
-1. Use WhatsApp markdown: *bold* for emphasis, _italic_ for quotes/examples.
-2. Emojis: Use 1-2 per paragraph to keep it friendly.
-3. Length: Keep overall response under 220 words.
-4. Actionable: Always tell the user exactly which button (1-7) to tap to find those types of people. 
-5. Language: Respond in the same language as the user.`,
+                        content: this.buildSparkSystemPrompt(userContext, communityContext, audienceGuide),
                     },
                     {
                         role: 'user',
@@ -816,20 +987,20 @@ STRICT FORMATTING RULES:
                 ],
             });
 
-            const aiReply = response.choices[0]?.message?.content?.trim() ??
-                `I didn't quite get that. Type *menu* to see what I can do!`;
+            const rawReply = response.choices[0]?.message?.content ?? '';
+            const aiReply = this.normalizeSparkAiReply(rawReply);
 
-            return (
-                `🤖 *Spark AI*\n` +
-                `────────────────────────\n\n` +
-                aiReply +
-                `\n\n────────────────────────\n` +
-                `_Tap *1–7* to navigate · Type *menu* for options_`
-            );
+            if (!aiReply || this.isLowQualitySparkReply(aiReply)) {
+                logger.warn({ rawReply }, 'Low-quality Spark AI response detected; serving fallback');
+                return this.sparkAiFallback();
+            }
+
+            const polishedReply = this.ensureSparkResponseStructure(aiReply);
+            return this.formatSparkAiCard(polishedReply);
 
         } catch (err) {
             logger.error({ err }, 'AI chat error');
-            return `Sorry, I couldn't process that right now. Type *menu* to see what I can do!`;
+            return this.sparkAiFallback();
         }
     }
     // ── END AI CHAT ───────────────────────────────────────────────────────────
