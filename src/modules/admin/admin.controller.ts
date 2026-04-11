@@ -7,6 +7,9 @@ export class AdminController {
     async getStats(req: Request, res: Response) {
         try {
             const stats = await adminService.getStats();
+            res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+            res.set('Pragma', 'no-cache');
+            res.set('Expires', '0');
             res.json({ success: true, data: stats });
         } catch (err) {
             logger.error({ err }, 'Admin getStats error');

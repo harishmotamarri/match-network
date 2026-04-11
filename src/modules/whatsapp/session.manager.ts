@@ -27,6 +27,8 @@ export type BotState =
     | 'TEAMMATE_POST_CONFIRM'
     | 'TEAMMATE_BROWSE_PICK'
     | 'TEAMMATE_DETAIL_ACTION'
+    | 'TEAMMATE_APPLICATION_PICK'
+    | 'TEAMMATE_APPLICATION_ACTION'
     | 'CHATTING';
 
 export interface BotSession {

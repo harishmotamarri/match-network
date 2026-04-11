@@ -298,7 +298,7 @@ export class MessageBuilder {
                 {
                     title: 'Actions',
                     rows: [
-                        { id: '1', title: '✅ Accept',       description: 'Connect and exchange contacts' },
+                        { id: '1', title: '✅ Accept',       description: 'Connect and open chat now' },
                         { id: '2', title: '❌ Reject',       description: 'Politely decline' },
                         { id: '3', title: '💬 Reply',        description: 'Send a message before deciding' },
                         { id: '4', title: '👤 View Profile', description: 'Check skills and background' },
@@ -321,15 +321,15 @@ export class MessageBuilder {
             return {
                 id: String(i + 1),
                 title: other.name,
-                description: `${other.profile?.city || 'Unknown'} · Manage connection`
+                description: `${other.profile?.city || 'Unknown'} · Tap to start chat`
             };
         });
         rows.push({ id: '0', title: '↩ Back to Menu', description: 'Return to main menu' });
 
         return {
             type: 'list',
-            text: `🌐 *Your Network (${connections.length})*\n\nSelect a person below to view their profile, message them, or manage the connection.`,
-            buttonText: 'View Network',
+            text: `🌐 *Your Network (${connections.length})*\n\nSelect a person below to start chatting instantly.`,
+            buttonText: 'Start Chat',
             sections: [
                 {
                     title: 'Your Professional Network',
@@ -484,7 +484,7 @@ export class MessageBuilder {
                     `*${i + 1}. ${req.title}*${!isMyPosts && req.requiredSkills.some((s: string) => userSkills.includes(s)) ? ' 🔥' : ''}\n` +
                     `   🛠 ${req.requiredSkills.join(', ')}\n` +
                     (isMyPosts 
-                        ? `   👥 ${req._count?.applications || 0} Applications pending\n   _Tap to close or remove this post_`
+                        ? `   👥 ${req._count?.applications || 0} Applications\n   _Tap to review applicants, accept, reject, or chat_`
                         : `   👤 ${req.creator.name} · 📍 ${req.creator.profile?.city || 'Remote'}\n   👥 ${req._count?.applications || 0} Applicants`
                     )
                 ).join('\n\n') +
@@ -504,23 +504,122 @@ export class MessageBuilder {
             `🛠 *Tools & Skills*\n${req.requiredSkills.join(', ')}\n\n` +
             `👤 *Posted by*\n${req.creator.name} (📍 ${req.creator.profile?.city || 'Remote'})\n\n` +
             `──────────────────────────\n` +
-            (isOwner ? `_This is YOUR post. You can close it or remove it permanently below._` : `_Interested in this? Apply now or chat directly with the poster._`)
+            (isOwner ? `_This is YOUR post. Review applicants to accept/reject and start chat._` : `_Interested in this? Apply now or chat directly with the poster._`)
         );
 
-        const buttons = isOwner
-            ? [
-                { id: 'req_close', title: '🚫 Close Project' },
-                { id: 'req_remove', title: '🗑 Remove Post' }
-            ]
-            : [
-                { id: 'req_apply', title: '✅ Request to Join' },
-                { id: 'req_chat', title: '💬 Chat with Poster' }
-            ];
+        if (isOwner) {
+            return {
+                type: 'list',
+                text,
+                buttonText: 'Manage Post',
+                sections: [
+                    {
+                        title: 'Owner Actions',
+                        rows: [
+                            { id: 'req_applications', title: '👥 View Applications', description: 'Review, accept, reject, or chat' },
+                            { id: 'req_close', title: '🚫 Close Project', description: 'Stop new applications' },
+                            { id: 'req_remove', title: '🗑 Remove Post', description: 'Delete post and all applications' },
+                            { id: 'team_browse', title: '↩ Back', description: 'Return to your posts' },
+                        ]
+                    }
+                ]
+            };
+        }
 
         return {
             type: 'buttons',
             text,
-            buttons: [...buttons, { id: 'team_browse', title: '↩ Back' }]
+            buttons: [
+                { id: 'req_apply', title: '✅ Request to Join' },
+                { id: 'req_chat', title: '💬 Chat with Poster' },
+                { id: 'team_browse', title: '↩ Back' }
+            ]
+        };
+    }
+
+    static teammateApplications(projectTitle: string, applications: any[]): any {
+        if (applications.length === 0) {
+            return {
+                type: 'buttons',
+                text: (
+                    `📭 *No applications yet*\n` +
+                    `──────────────────────────\n\n` +
+                    `*${projectTitle}* has no applicants right now.\n\n` +
+                    `_Come back later to review incoming requests._`
+                ),
+                buttons: [
+                    { id: 'app_back', title: '↩ Back to Post' },
+                    { id: 'team_browse', title: '📋 My Posts' }
+                ]
+            };
+        }
+
+        const rows = applications.map((app, index) => {
+            const status = String(app.status || 'PENDING');
+            const badge = status === 'ACCEPTED' ? '✅' : status === 'REJECTED' ? '❌' : '⏳';
+
+            return {
+                id: `app_${index}`,
+                title: `${badge} ${app.applicant.name}`,
+                description: `${status} · ${app.applicant.profile?.city || 'Remote'}`,
+            };
+        });
+
+        rows.push({ id: 'app_back', title: '↩ Back to Post', description: 'Return to post actions' });
+
+        return {
+            type: 'list',
+            text: (
+                `👥 *Applications for ${projectTitle}*\n` +
+                `──────────────────────────\n\n` +
+                applications.map((app, index) => {
+                    const status = String(app.status || 'PENDING');
+                    const badge = status === 'ACCEPTED' ? '✅' : status === 'REJECTED' ? '❌' : '⏳';
+                    return `*${index + 1}. ${app.applicant.name}* ${badge}\n` +
+                        `   📍 ${app.applicant.profile?.city || 'Remote'}\n` +
+                        `   🏷 Status: ${status}`;
+                }).join('\n\n') +
+                `\n\nSelect an applicant to manage.`
+            ),
+            buttonText: 'Review Applicants',
+            sections: [
+                {
+                    title: 'Applicants',
+                    rows,
+                }
+            ]
+        };
+    }
+
+    static teammateApplicantActions(applicant: any, projectTitle: string): any {
+        const status = String(applicant.status || 'PENDING');
+        const rows: Array<{ id: string; title: string; description: string }> = [];
+
+        if (status === 'PENDING') {
+            rows.push({ id: 'app_accept', title: '✅ Accept Request', description: 'Approve and start chat now' });
+            rows.push({ id: 'app_reject', title: '❌ Reject Request', description: 'Decline this applicant' });
+        }
+
+        rows.push({ id: 'app_chat', title: '💬 Chat', description: 'Ask details before sharing numbers' });
+        rows.push({ id: 'app_profile', title: '👤 View Profile', description: 'Check skills and background' });
+        rows.push({ id: 'app_back', title: '↩ Back', description: 'Return to applicant list' });
+
+        return {
+            type: 'list',
+            text: (
+                `🧑‍💻 *Applicant: ${applicant.applicant.name}*\n` +
+                `──────────────────────────\n\n` +
+                `📌 Project: *${projectTitle}*\n` +
+                `🏷 Current Status: *${status}*\n\n` +
+                `Choose what to do next.`
+            ),
+            buttonText: 'Applicant Actions',
+            sections: [
+                {
+                    title: 'Actions',
+                    rows,
+                }
+            ]
         };
     }
 

@@ -1,35 +1,86 @@
 import prisma from '../../shared/database/prisma';
+import redis from '../../shared/cache/redis';
 import { sendTextMessage } from '../whatsapp/meta.client';
 import logger from '../../shared/logger';
 
 export class AdminService {
 
+    private async countLiveUserSessions(): Promise<number> {
+        const sessionUserIds = new Set<string>();
+        let cursor = '0';
+
+        try {
+            do {
+                const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', 'wa:session:*', 'COUNT', 100);
+                cursor = nextCursor;
+
+                if (keys.length === 0) continue;
+
+                const sessions = await redis.mget(...keys);
+                for (const rawSession of sessions) {
+                    if (!rawSession) continue;
+
+                    try {
+                        const parsed = JSON.parse(rawSession) as { userId?: string };
+                        if (parsed.userId) sessionUserIds.add(parsed.userId);
+                    } catch {
+                        // Ignore malformed session payloads to keep stats endpoint resilient.
+                    }
+                }
+            } while (cursor !== '0');
+
+            return sessionUserIds.size;
+        } catch (err) {
+            logger.warn({ err }, 'Failed to read live sessions for admin stats');
+            return 0;
+        }
+    }
+
     // ── STATS ─────────────────────────────────────────────────────────────────
     async getStats() {
+        const now = new Date();
+        const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
         const [
             totalUsers,
-            activeUsers,
+            activeAccounts,
+            blockedUsers,
             totalConnections,
             acceptedConnections,
             pendingConnections,
             totalSkills,
+            newUsers24h,
+            newConnections24h,
+            liveUsers,
         ] = await Promise.all([
             prisma.user.count(),
             prisma.user.count({ where: { isActive: true } }),
+            prisma.user.count({ where: { isActive: false } }),
             prisma.connection.count(),
             prisma.connection.count({ where: { status: 'ACCEPTED' } }),
             prisma.connection.count({ where: { status: 'PENDING' } }),
             prisma.skill.count(),
+            prisma.user.count({ where: { createdAt: { gte: last24h } } }),
+            prisma.connection.count({ where: { createdAt: { gte: last24h } } }),
+            this.countLiveUserSessions(),
         ]);
+
+        // Keep "activeUsers" dynamic for dashboards while preserving account-level metrics.
+        const activeUsers = liveUsers > 0 ? liveUsers : activeAccounts;
 
         return {
             totalUsers,
             activeUsers,
-            blockedUsers: totalUsers - activeUsers,
+            onlineUsers: liveUsers,
+            activeAccounts,
+            blockedUsers,
             totalConnections,
             acceptedConnections,
             pendingConnections,
             totalSkills,
+            newUsers24h,
+            newConnections24h,
+            generatedAt: now.toISOString(),
         };
     }
 

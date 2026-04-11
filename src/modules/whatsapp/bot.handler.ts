@@ -149,6 +149,8 @@ export class BotHandler {
             case 'TEAMMATE_POST_CONFIRM': return this.handleTeammatePostConfirm(session, msg);
             case 'TEAMMATE_BROWSE_PICK': return this.handleTeammateBrowsePick(session, msg);
             case 'TEAMMATE_DETAIL_ACTION': return this.handleTeammateDetailAction(session, msg);
+            case 'TEAMMATE_APPLICATION_PICK': return this.handleTeammateApplicationPick(session, msg);
+            case 'TEAMMATE_APPLICATION_ACTION': return this.handleTeammateApplicationAction(session, msg);
             case 'CHATTING': return this.handleChat(session, msg);
             default: return this.goToMenu(session);
         }
@@ -510,7 +512,7 @@ export class BotHandler {
         if (isNaN(idx) || idx < 0 || idx >= connections.length) {
             return (
                 `⚠️ *Invalid Selection*\n\n` +
-                `Please reply with a number *1–${connections.length}* to manage a connection.\n\n` +
+                `Please reply with a number *1–${connections.length}* to start a chat.\n\n` +
                 `_Or type *0* to return to the menu._`
             );
         }
@@ -518,12 +520,7 @@ export class BotHandler {
         const picked = connections[idx];
         const other = picked.requesterId === session.userId ? picked.receiver : picked.requester;
 
-        await sessionManager.patch(session.phoneNumber, {
-            state: 'AWAITING_CONNECTION_ACTION',
-            tempData: { ...session.tempData, selectedConnection: picked, otherUser: other },
-        });
-
-        return MessageBuilder.connectionActions(other.name);
+        return this.startChat(session, other.id, 'CONNECTIONS');
     }
 
     private async handleConnectionAction(session: BotSession, msg: string): Promise<string | any> {
@@ -551,7 +548,11 @@ export class BotHandler {
         }
     }
 
-    private async startChat(session: BotSession, targetUserId: string): Promise<string | any> {
+    private async startChat(
+        session: BotSession,
+        targetUserId: string,
+        returnFlow: 'CONNECTIONS' | 'TEAMMATE_DETAIL' | 'TEAMMATE_APPLICATIONS' = 'CONNECTIONS'
+    ): Promise<string | any> {
         const targetUser = await prisma.user.findUnique({
             where: { id: targetUserId },
             include: { profile: true }
@@ -567,7 +568,8 @@ export class BotHandler {
                 ...session.tempData,
                 chatTargetId: targetUserId,
                 chatTargetName: targetUser.name,
-                chatTargetPhone: targetUser.phoneNumber
+                chatTargetPhone: targetUser.phoneNumber,
+                chatReturnFlow: returnFlow,
             }
         });
 
@@ -575,10 +577,21 @@ export class BotHandler {
     }
 
     private async handleChat(session: BotSession, msg: string): Promise<string | any> {
-        const { chatTargetId, chatTargetName, chatTargetPhone } = session.tempData ?? {};
+        const { chatTargetId, chatTargetPhone, chatReturnFlow } = session.tempData ?? {};
+
+        if (!chatTargetId || !chatTargetPhone) {
+            return this.goToMenu(session);
+        }
 
         if (msg === '0' || msg.toLowerCase() === 'exit') {
-            await sessionManager.patch(session.phoneNumber, { state: 'MAIN_MENU' });
+            if (chatReturnFlow === 'TEAMMATE_DETAIL') {
+                return this.showSelectedTeammateDetail(session);
+            }
+
+            if (chatReturnFlow === 'TEAMMATE_APPLICATIONS') {
+                return this.showTeammateApplications(session);
+            }
+
             return this.showMyConnections(session);
         }
 
@@ -632,8 +645,13 @@ export class BotHandler {
             switch (msg) {
                 case '1': // Accept
                     await matchingService.respondToConnection(picked.id, session.userId!, 'ACCEPTED');
-                    await sessionManager.patch(session.phoneNumber, { state: 'MAIN_MENU', tempData: {} });
-                    return MessageBuilder.mainMenu(MessageBuilder.matchAccepted(picked.requester.name));
+                    const chatHeader = await this.startChat(session, picked.requester.id, 'CONNECTIONS');
+                    return (
+                        `✅ *Request Accepted*\n\n` +
+                        `You're now connected with *${picked.requester.name}*.\n` +
+                        `Chat opened below so you can talk instantly.\n\n` +
+                        `${chatHeader}`
+                    );
 
                 case '2': // Reject
                     await matchingService.respondToConnection(picked.id, session.userId!, 'REJECTED');
@@ -1011,27 +1029,31 @@ Constraints:
         // ── admin stats ───────────────────────────────────────────────────────
         if (msg === 'admin stats') {
             const stats = await adminService.getStats();
-            const activeRate = stats.totalUsers > 0
-                ? Math.round((stats.activeUsers / stats.totalUsers) * 100)
+            const onlineRate = stats.totalUsers > 0
+                ? Math.round((stats.onlineUsers / stats.totalUsers) * 100)
                 : 0;
             const acceptRate = stats.totalConnections > 0
                 ? Math.round((stats.acceptedConnections / stats.totalConnections) * 100)
                 : 0;
+            const generatedAt = new Date(stats.generatedAt).toLocaleString('en-IN', { hour12: true });
             return (
                 `⚙️ *Admin Dashboard*\n` +
                 `──────────────────────────\n\n` +
                 `👥 *User Stats*\n` +
                 `   Total Users:    ${stats.totalUsers}\n` +
-                `   ✅ Active:       ${stats.activeUsers}  _(${activeRate}%)_\n` +
-                `   🚫 Blocked:     ${stats.blockedUsers}\n\n` +
+                `   🟢 Online (30m): ${stats.onlineUsers}  _(${onlineRate}%)_\n` +
+                `   ✅ Active Accts: ${stats.activeAccounts}\n` +
+                `   🚫 Blocked:      ${stats.blockedUsers}\n` +
+                `   🆕 New (24h):    ${stats.newUsers24h}\n\n` +
                 `🤝 *Connection Stats*\n` +
                 `   Total:          ${stats.totalConnections}\n` +
                 `   ✅ Accepted:    ${stats.acceptedConnections}  _(${acceptRate}%)_\n` +
-                `   ⏳ Pending:     ${stats.pendingConnections}\n\n` +
+                `   ⏳ Pending:     ${stats.pendingConnections}\n` +
+                `   🆕 New (24h):   ${stats.newConnections24h}\n\n` +
                 `🛠 *Platform*\n` +
                 `   Skills in DB:  ${stats.totalSkills}\n\n` +
                 `──────────────────────────\n` +
-                `_Last updated: just now_`
+                `_Last updated: ${generatedAt}_`
             );
         }
 
@@ -1283,10 +1305,11 @@ Constraints:
         }
 
         // Numeric fallback maps depend on ownership:
-        // owner: 1=close, 2=remove | non-owner: 1=apply, 2=chat
+        // owner: 1=applications, 2=close, 3=remove | non-owner: 1=apply, 2=chat
         let action = msg;
-        if (msg === '1') action = isOwner ? 'req_close' : 'req_apply';
-        if (msg === '2') action = isOwner ? 'req_remove' : 'req_chat';
+        if (msg === '1') action = isOwner ? 'req_applications' : 'req_apply';
+        if (msg === '2') action = isOwner ? 'req_close' : 'req_chat';
+        if (msg === '3' && isOwner) action = 'req_remove';
 
         if (action === 'team_browse' || action === 'back') {
             return session.tempData?.isMyPosts ? this.showMyTeammatePosts(session) : this.browseTeammateRequests(session);
@@ -1333,17 +1356,21 @@ Constraints:
                 await notificationService.notifyTeammateApplication(
                     poster.phoneNumber,
                     applicantName,
-                    "Interested in your project!"
+                    selectedProjectTitle || 'your project'
                 );
             }
             return `✅ *Application Sent!*\n\nThe poster has been notified. They can start a chat with you if interested.`;
+        }
+
+        if (action === 'req_applications' && isOwner) {
+            return this.showTeammateApplications(session);
         }
 
         if (action === 'req_chat') {
             if (isOwner) {
                 return `ℹ️ *This is your own project post.*\n\nYou can *Close Project* or *Remove Post* from this screen.`;
             }
-            return this.startChat(session, posterId);
+            return this.startChat(session, posterId, 'TEAMMATE_DETAIL');
         }
 
         if (action === 'req_close' && isOwner) {
@@ -1366,6 +1393,217 @@ Constraints:
         }
 
         return session.tempData?.isMyPosts ? this.showMyTeammatePosts(session) : this.browseTeammateRequests(session);
+    }
+
+    private async showSelectedTeammateDetail(session: BotSession): Promise<any> {
+        const { selectedProjectId } = session.tempData ?? {};
+        if (!selectedProjectId) {
+            return this.startTeammateHub(session);
+        }
+
+        const fullReq = await teammateService.getRequestById(selectedProjectId);
+        if (!fullReq) {
+            return this.startTeammateHub(session);
+        }
+
+        await sessionManager.patch(session.phoneNumber, {
+            state: 'TEAMMATE_DETAIL_ACTION',
+            tempData: {
+                ...session.tempData,
+                selectedProjectId: fullReq.id,
+                selectedProjectTitle: fullReq.title,
+                posterId: fullReq.creatorId,
+            },
+        });
+
+        return MessageBuilder.teammateDetail(fullReq, fullReq.creatorId === session.userId);
+    }
+
+    private async showTeammateApplications(session: BotSession): Promise<any> {
+        const { selectedProjectId, selectedProjectTitle } = session.tempData ?? {};
+
+        if (!selectedProjectId) {
+            return this.showMyTeammatePosts(session);
+        }
+
+        let requestTitle: string;
+        let applications: any[];
+        try {
+            const result = await teammateService.getApplicationsForRequest(
+                selectedProjectId,
+                session.userId!
+            );
+            requestTitle = result.requestTitle;
+            applications = result.applications;
+        } catch (err: any) {
+            const errorMessage = (err?.message || '').toLowerCase();
+            if (errorMessage.includes('teammate_request_not_found')) {
+                return this.showMyTeammatePosts(session);
+            }
+            throw err;
+        }
+
+        await sessionManager.patch(session.phoneNumber, {
+            state: 'TEAMMATE_APPLICATION_PICK',
+            tempData: {
+                ...session.tempData,
+                selectedProjectTitle: requestTitle || selectedProjectTitle,
+                selectedApplications: applications,
+                selectedApplicationIndex: null,
+            },
+        });
+
+        return MessageBuilder.teammateApplications(
+            requestTitle || selectedProjectTitle || 'Untitled Project',
+            applications
+        );
+    }
+
+    private async handleTeammateApplicationPick(session: BotSession, msg: string): Promise<any> {
+        const { selectedApplications = [], selectedProjectTitle } = session.tempData ?? {};
+
+        if (msg === '0' || msg === 'back' || msg === 'app_back') {
+            return this.showSelectedTeammateDetail(session);
+        }
+
+        const index = msg.startsWith('app_') ? parseInt(msg.replace('app_', ''), 10) : parseInt(msg, 10) - 1;
+        if (isNaN(index) || index < 0 || index >= selectedApplications.length) {
+            return MessageBuilder.teammateApplications(
+                selectedProjectTitle || 'Untitled Project',
+                selectedApplications
+            );
+        }
+
+        const selectedApplication = selectedApplications[index];
+
+        await sessionManager.patch(session.phoneNumber, {
+            state: 'TEAMMATE_APPLICATION_ACTION',
+            tempData: {
+                ...session.tempData,
+                selectedApplicationIndex: index,
+            },
+        });
+
+        return MessageBuilder.teammateApplicantActions(
+            selectedApplication,
+            selectedProjectTitle || 'Untitled Project'
+        );
+    }
+
+    private async handleTeammateApplicationAction(session: BotSession, msg: string): Promise<any> {
+        const {
+            selectedApplications = [],
+            selectedApplicationIndex,
+            selectedProjectTitle,
+        } = session.tempData ?? {};
+
+        if (selectedApplicationIndex === undefined || selectedApplicationIndex === null) {
+            return this.showTeammateApplications(session);
+        }
+
+        const selectedApplication = selectedApplications[selectedApplicationIndex];
+        if (!selectedApplication) {
+            return this.showTeammateApplications(session);
+        }
+
+        let action = msg;
+        const isPending = selectedApplication.status === 'PENDING';
+        if (msg === '1') action = isPending ? 'app_accept' : 'app_chat';
+        if (msg === '2') action = isPending ? 'app_reject' : 'app_profile';
+        if (msg === '3') action = isPending ? 'app_chat' : 'app_back';
+        if (msg === '4') action = isPending ? 'app_profile' : action;
+        if (msg === '5' && isPending) action = 'app_back';
+        if (msg === '0') action = 'app_back';
+
+        if (action === 'app_back' || action === 'back') {
+            return this.showTeammateApplications(session);
+        }
+
+        if (action === 'app_profile') {
+            return MessageBuilder.publicProfile(selectedApplication.applicant);
+        }
+
+        if (action === 'app_chat') {
+            return this.startChat(session, selectedApplication.applicant.id, 'TEAMMATE_APPLICATIONS');
+        }
+
+        if (action === 'app_accept') {
+            try {
+                const updated = await teammateService.respondToApplication(
+                    selectedApplication.id,
+                    session.userId!,
+                    'ACCEPTED'
+                );
+
+                await notificationService.notifyTeammateApplicationAccepted(
+                    updated.applicant.phoneNumber,
+                    updated.request.creator.name,
+                    updated.request.creator.phoneNumber,
+                    updated.request.title
+                );
+
+                const chatIntro =
+                    `✅ *Request Accepted*\n\n` +
+                    `You accepted *${updated.applicant.name}* for *${updated.request.title}*.\n` +
+                    `Chat opened below so you can coordinate and ask for contact details.`;
+
+                const chatHeader = await this.startChat(
+                    session,
+                    updated.applicant.id,
+                    'TEAMMATE_APPLICATIONS'
+                );
+
+                return `${chatIntro}\n\n${chatHeader}`;
+            } catch (err: any) {
+                const errorMessage = (err?.message || '').toLowerCase();
+                if (errorMessage.includes('already_responded')) {
+                    return `ℹ️ *This request was already handled.*\n\nPlease open the applicant again to continue.`;
+                }
+                if (errorMessage.includes('not_found')) {
+                    return `⚠️ *Applicant not found*\n\nIt may have been removed. Refreshing list...`;
+                }
+                throw err;
+            }
+        }
+
+        if (action === 'app_reject') {
+            try {
+                const updated = await teammateService.respondToApplication(
+                    selectedApplication.id,
+                    session.userId!,
+                    'REJECTED'
+                );
+
+                await notificationService.notifyTeammateApplicationRejected(
+                    updated.applicant.phoneNumber,
+                    updated.request.creator.name,
+                    updated.request.title
+                );
+
+                const refreshed = await this.showTeammateApplications(session);
+                if (refreshed && typeof refreshed === 'object' && 'text' in refreshed) {
+                    refreshed.text =
+                        `✅ *Request Rejected*\n\n` +
+                        `You rejected *${updated.applicant.name}* for *${updated.request.title}*.\n\n` +
+                        `${refreshed.text}`;
+                }
+                return refreshed;
+            } catch (err: any) {
+                const errorMessage = (err?.message || '').toLowerCase();
+                if (errorMessage.includes('already_responded')) {
+                    return `ℹ️ *This request was already handled.*\n\nPlease open the applicant again to continue.`;
+                }
+                if (errorMessage.includes('not_found')) {
+                    return `⚠️ *Applicant not found*\n\nRefreshing list...`;
+                }
+                throw err;
+            }
+        }
+
+        return MessageBuilder.teammateApplicantActions(
+            selectedApplication,
+            selectedProjectTitle || 'Untitled Project'
+        );
     }
 
     private async showMyTeammatePosts(session: BotSession): Promise<any> {

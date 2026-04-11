@@ -91,9 +91,35 @@ export class NotificationService {
     ): Promise<void> {
         const message =
             `📬 *${applicantName}* applied for your project: *${projectName}*!\n\n` +
-            `_You can see their profile or start a chat with them in your connections menu._`;
+            `_Open Teammate Hub → My Posts → View Applications to accept/reject or chat._`;
 
         await this.send(posterPhone, message, 'teammate_application');
+    }
+
+    async notifyTeammateApplicationAccepted(
+        applicantPhone: string,
+        posterName: string,
+        posterPhone: string,
+        projectTitle: string
+    ): Promise<void> {
+        const message =
+            `🎉 Your request to join *${projectTitle}* was accepted by *${posterName}*!\n\n` +
+            `📱 Their WhatsApp: *+${posterPhone}*\n\n` +
+            `_Open Spark and use teammate chat to coordinate next steps._`;
+
+        await this.send(applicantPhone, message, 'teammate_application_accepted');
+    }
+
+    async notifyTeammateApplicationRejected(
+        applicantPhone: string,
+        posterName: string,
+        projectTitle: string
+    ): Promise<void> {
+        const message =
+            `ℹ️ Your request to join *${projectTitle}* was declined by *${posterName}*.\n\n` +
+            `_Keep exploring active posts in Teammate Hub._`;
+
+        await this.send(applicantPhone, message, 'teammate_application_rejected');
     }
 
     private async send(

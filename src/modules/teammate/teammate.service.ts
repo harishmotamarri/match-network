@@ -176,6 +176,116 @@ export class TeammateService {
         });
     }
 
+    async getApplicationsForRequest(requestId: string, ownerId: string) {
+        const request = await prisma.teammateRequest.findFirst({
+            where: { id: requestId, creatorId: ownerId },
+            select: { id: true, title: true },
+        });
+
+        if (!request) {
+            throw new Error('TEAMMATE_REQUEST_NOT_FOUND');
+        }
+
+        const applications = await prisma.teammateApplication.findMany({
+            where: { requestId },
+            include: {
+                applicant: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phoneNumber: true,
+                        profile: {
+                            select: {
+                                bio: true,
+                                city: true,
+                                experienceLevel: true,
+                                availability: true,
+                            },
+                        },
+                        userSkills: {
+                            include: { skill: true },
+                        },
+                    },
+                },
+            },
+            orderBy: { createdAt: 'desc' },
+        });
+
+        return {
+            requestTitle: request.title,
+            applications,
+        };
+    }
+
+    async respondToApplication(applicationId: string, ownerId: string, action: 'ACCEPTED' | 'REJECTED') {
+        const existing = await prisma.teammateApplication.findUnique({
+            where: { id: applicationId },
+            include: {
+                request: {
+                    select: {
+                        id: true,
+                        title: true,
+                        creatorId: true,
+                        creator: {
+                            select: {
+                                id: true,
+                                name: true,
+                                phoneNumber: true,
+                            },
+                        },
+                    },
+                },
+                applicant: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phoneNumber: true,
+                    },
+                },
+            },
+        });
+
+        if (!existing) {
+            throw new Error('TEAMMATE_APPLICATION_NOT_FOUND');
+        }
+
+        if (existing.request.creatorId !== ownerId) {
+            throw new Error('TEAMMATE_APPLICATION_FORBIDDEN');
+        }
+
+        if (existing.status !== 'PENDING') {
+            throw new Error('TEAMMATE_APPLICATION_ALREADY_RESPONDED');
+        }
+
+        return prisma.teammateApplication.update({
+            where: { id: applicationId },
+            data: { status: action },
+            include: {
+                request: {
+                    select: {
+                        id: true,
+                        title: true,
+                        creatorId: true,
+                        creator: {
+                            select: {
+                                id: true,
+                                name: true,
+                                phoneNumber: true,
+                            },
+                        },
+                    },
+                },
+                applicant: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phoneNumber: true,
+                    },
+                },
+            },
+        });
+    }
+
     async closeRequest(requestId: string, userId: string) {
         return prisma.teammateRequest.updateMany({
             where: { id: requestId, creatorId: userId },
