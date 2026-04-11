@@ -484,7 +484,7 @@ export class MessageBuilder {
                     `*${i + 1}. ${req.title}*${!isMyPosts && req.requiredSkills.some((s: string) => userSkills.includes(s)) ? ' 🔥' : ''}\n` +
                     `   🛠 ${req.requiredSkills.join(', ')}\n` +
                     (isMyPosts 
-                        ? `   👥 ${req._count?.applications || 0} Applications pending\n   _Tap options to manage or close_`
+                        ? `   👥 ${req._count?.applications || 0} Applications pending\n   _Tap to close or remove this post_`
                         : `   👤 ${req.creator.name} · 📍 ${req.creator.profile?.city || 'Remote'}\n   👥 ${req._count?.applications || 0} Applicants`
                     )
                 ).join('\n\n') +
@@ -504,11 +504,14 @@ export class MessageBuilder {
             `🛠 *Tools & Skills*\n${req.requiredSkills.join(', ')}\n\n` +
             `👤 *Posted by*\n${req.creator.name} (📍 ${req.creator.profile?.city || 'Remote'})\n\n` +
             `──────────────────────────\n` +
-            (isOwner ? `_This is YOUR post. You can close it below._` : `_Interested in this? Apply now or chat directly with the poster._`)
+            (isOwner ? `_This is YOUR post. You can close it or remove it permanently below._` : `_Interested in this? Apply now or chat directly with the poster._`)
         );
 
         const buttons = isOwner
-            ? [{ id: 'req_close', title: '🚫 Close Request' }]
+            ? [
+                { id: 'req_close', title: '🚫 Close Request' },
+                { id: 'req_remove', title: '🗑 Remove Post' }
+            ]
             : [
                 { id: 'req_apply', title: '✅ Apply/Join' },
                 { id: 'req_chat', title: '💬 Chat with Poster' }
@@ -518,6 +521,24 @@ export class MessageBuilder {
             type: 'buttons',
             text,
             buttons: [...buttons, { id: 'team_browse', title: '↩ Back' }]
+        };
+    }
+
+    static teammateRemoveConfirm(projectTitle: string): any {
+        return {
+            type: 'buttons',
+            text: (
+                `🗑 *Remove This Post?*\n` +
+                `──────────────────────────\n\n` +
+                `*${projectTitle}*\n\n` +
+                `This will permanently remove your post and all applications tied to it.\n\n` +
+                `──────────────────────────\n` +
+                `_This action cannot be undone._`
+            ),
+            buttons: [
+                { id: 'req_remove_confirm', title: '✅ Yes, Remove' },
+                { id: 'req_remove_cancel', title: '↩ Keep Post' }
+            ]
         };
     }
 

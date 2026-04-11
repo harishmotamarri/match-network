@@ -1,5 +1,6 @@
 import prisma from '../../shared/database/prisma';
 import logger from '../../shared/logger';
+import { execSync } from 'node:child_process';
 
 export interface CreateTeammateRequest {
     creatorId: string;
@@ -9,6 +10,7 @@ export interface CreateTeammateRequest {
 }
 
 export class TeammateService {
+    private schemaRecoveryInFlight: Promise<boolean> | null = null;
 
     private isSchemaSyncError(err: unknown): boolean {
         const candidate = err as { code?: string; message?: string } | undefined;
@@ -22,21 +24,85 @@ export class TeammateService {
         );
     }
 
-    async createRequest(data: CreateTeammateRequest) {
-        return prisma.teammateRequest.create({
-            data: {
-                creatorId: data.creatorId,
-                title: data.title,
-                description: data.description,
-                requiredSkills: data.requiredSkills,
+    private async attemptSchemaRecovery(): Promise<boolean> {
+        if (this.schemaRecoveryInFlight) {
+            return this.schemaRecoveryInFlight;
+        }
+
+        this.schemaRecoveryInFlight = (async () => {
+            try {
+                logger.warn('Detected teammate schema mismatch. Attempting Prisma migration recovery');
+                execSync('npx prisma migrate deploy', {
+                    cwd: process.cwd(),
+                    stdio: 'pipe',
+                });
+                logger.info('Prisma migration recovery completed for teammate hub');
+                return true;
+            } catch (err) {
+                logger.error({ err }, 'Prisma migration recovery failed for teammate hub');
+                return false;
+            } finally {
+                this.schemaRecoveryInFlight = null;
             }
-        });
+        })();
+
+        return this.schemaRecoveryInFlight;
+    }
+
+    private async runWithSchemaRecovery<T>(
+        operationName: string,
+        operation: () => Promise<T>,
+        onUnavailable: () => T
+    ): Promise<T> {
+        try {
+            return await operation();
+        } catch (err) {
+            if (!this.isSchemaSyncError(err)) {
+                throw err;
+            }
+
+            logger.error({ err }, `Schema not ready while attempting to ${operationName}`);
+
+            const recovered = await this.attemptSchemaRecovery();
+            if (recovered) {
+                try {
+                    return await operation();
+                } catch (retryErr) {
+                    if (!this.isSchemaSyncError(retryErr)) {
+                        throw retryErr;
+                    }
+                    logger.error({ err: retryErr }, `Schema still not ready after recovery while attempting to ${operationName}`);
+                }
+            }
+
+            return onUnavailable();
+        }
+    }
+
+    async createRequest(data: CreateTeammateRequest) {
+        return this.runWithSchemaRecovery(
+            'create teammate request',
+            () => prisma.teammateRequest.create({
+                data: {
+                    creatorId: data.creatorId,
+                    title: data.title,
+                    description: data.description,
+                    requiredSkills: data.requiredSkills,
+                }
+            }),
+            () => {
+                throw new Error('TEAMMATE_HUB_UNAVAILABLE');
+            }
+        );
     }
 
     async getActiveRequests(userId?: string) {
-        try {
-            return await prisma.teammateRequest.findMany({
-                where: { status: 'OPEN' },
+        return this.runWithSchemaRecovery(
+            'fetch active teammate requests',
+            () => prisma.teammateRequest.findMany({
+                where: userId
+                    ? { status: 'OPEN', creatorId: userId }
+                    : { status: 'OPEN' },
                 include: {
                     creator: {
                         select: {
@@ -47,19 +113,17 @@ export class TeammateService {
                     _count: { select: { applications: true } }
                 },
                 orderBy: { createdAt: 'desc' }
-            });
-        } catch (err) {
-            if (this.isSchemaSyncError(err)) {
-                logger.error({ err }, 'teammate_requests table not ready while fetching active requests');
+            }),
+            () => {
                 return [];
             }
-            throw err;
-        }
+        );
     }
 
     async getRequestById(id: string) {
-        try {
-            return await prisma.teammateRequest.findUnique({
+        return this.runWithSchemaRecovery(
+            'fetch teammate request by id',
+            () => prisma.teammateRequest.findUnique({
                 where: { id },
                 include: {
                     creator: {
@@ -71,14 +135,11 @@ export class TeammateService {
                         }
                     }
                 }
-            });
-        } catch (err) {
-            if (this.isSchemaSyncError(err)) {
-                logger.error({ err }, 'teammate_requests table not ready while fetching request by id');
+            }),
+            () => {
                 return null;
             }
-            throw err;
-        }
+        );
     }
 
     async applyToRequest(requestId: string, applicantId: string, message?: string) {
@@ -103,6 +164,18 @@ export class TeammateService {
             where: { id: requestId, creatorId: userId },
             data: { status: 'CLOSED' }
         });
+    }
+
+    async removeRequest(requestId: string, userId: string) {
+        return this.runWithSchemaRecovery(
+            'remove teammate request',
+            () => prisma.teammateRequest.deleteMany({
+                where: { id: requestId, creatorId: userId }
+            }),
+            () => {
+                return { count: 0 };
+            }
+        );
     }
 }
 

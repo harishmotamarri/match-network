@@ -41,6 +41,7 @@ function getSafeBotErrorMessage(err: unknown): string {
     const isSchemaSyncError =
         code === 'P2021' ||
         code === 'P2022' ||
+        message.includes('teammate_hub_unavailable') ||
         (message.includes('teammate_requests') && message.includes('does not exist'));
 
     if (isSchemaSyncError) {
@@ -962,10 +963,10 @@ STRICT FORMATTING RULES:
     private async handleTeammateAction(session: BotSession, msg: string): Promise<any> {
         if (msg === '0') return this.goToMenu(session);
 
-        const choice = msg.toLowerCase();
+        const choice = msg.toLowerCase().trim();
         if (choice === 'team_browse' || choice === '1' || choice.includes('browse')) return this.browseTeammateRequests(session);
+        if (choice === 'team_my' || choice === '3' || choice === 'my' || choice.includes('my post')) return this.showMyTeammatePosts(session);
         if (choice === 'team_post' || choice === '2' || choice.includes('post')) return this.startTeammatePost(session);
-        if (choice === 'team_my' || choice === '3' || choice.includes('my')) return this.showMyTeammatePosts(session);
 
         return MessageBuilder.teammateHub();
     }
@@ -1035,7 +1036,7 @@ STRICT FORMATTING RULES:
 
     private async handleTeammatePostConfirm(session: BotSession, msg: string): Promise<any> {
         if (msg === 'post_cancel' || msg === '2' || msg === '0') {
-            await sessionManager.patch(session.phoneNumber, { state: 'TEAMMATE_HUB' });
+            await sessionManager.patch(session.phoneNumber, { state: 'MAIN_MENU', tempData: {} });
             return MessageBuilder.mainMenu(`❌ *Post cancelled and discarded.*`);
         }
 
@@ -1053,7 +1054,7 @@ STRICT FORMATTING RULES:
             requiredSkills: projectSkills
         });
 
-        await sessionManager.patch(session.phoneNumber, { state: 'TEAMMATE_HUB', tempData: {} });
+        await sessionManager.patch(session.phoneNumber, { state: 'MAIN_MENU', tempData: {} });
         return MessageBuilder.mainMenu(`🎉 *Project Posted Successfully!*\n\nOther builders can now see your request and apply.`);
     }
 
@@ -1077,6 +1078,7 @@ STRICT FORMATTING RULES:
     private async handleTeammateBrowsePick(session: BotSession, msg: string): Promise<any> {
         if (msg === '0' || msg === 'back') return this.startTeammateHub(session);
         if (msg === 'team_post') return this.startTeammatePost(session);
+        if (msg === 'team_my') return this.showMyTeammatePosts(session);
 
         const requests = session.tempData?.browsedRequests || [];
         const index = msg.startsWith('req_') ? parseInt(msg.replace('req_', ''), 10) : parseInt(msg, 10) - 1;
@@ -1090,17 +1092,30 @@ STRICT FORMATTING RULES:
 
         await sessionManager.patch(session.phoneNumber, {
             state: 'TEAMMATE_DETAIL_ACTION',
-            tempData: { ...session.tempData, selectedProjectId: req.id, posterId: fullReq.creatorId }
+            tempData: {
+                ...session.tempData,
+                selectedProjectId: req.id,
+                selectedProjectTitle: fullReq.title,
+                posterId: fullReq.creatorId
+            }
         });
 
         return MessageBuilder.teammateDetail(fullReq, fullReq.creatorId === session.userId);
     }
 
     private async handleTeammateDetailAction(session: BotSession, msg: string): Promise<any> {
-        const { selectedProjectId, posterId } = session.tempData ?? {};
+        const { selectedProjectId, selectedProjectTitle, posterId } = session.tempData ?? {};
 
         if (msg === 'team_browse' || msg === 'back') {
             return session.tempData?.isMyPosts ? this.showMyTeammatePosts(session) : this.browseTeammateRequests(session);
+        }
+
+        if (msg === 'req_remove_cancel') {
+            const fullReq = await teammateService.getRequestById(selectedProjectId);
+            if (!fullReq) {
+                return session.tempData?.isMyPosts ? this.showMyTeammatePosts(session) : this.browseTeammateRequests(session);
+            }
+            return MessageBuilder.teammateDetail(fullReq, fullReq.creatorId === session.userId);
         }
 
         if (msg === 'req_apply' || msg === '1') {
@@ -1130,15 +1145,28 @@ STRICT FORMATTING RULES:
 
         if (msg === 'req_close' && posterId === session.userId) {
             await teammateService.closeRequest(selectedProjectId, session.userId!);
+            await sessionManager.patch(session.phoneNumber, { state: 'MAIN_MENU' });
             return MessageBuilder.mainMenu(`✅ *Project Closed.*\n\nYour post is no longer visible to other builders.`);
+        }
+
+        if (msg === 'req_remove' && posterId === session.userId) {
+            return MessageBuilder.teammateRemoveConfirm(selectedProjectTitle || 'Untitled Project');
+        }
+
+        if (msg === 'req_remove_confirm' && posterId === session.userId) {
+            const deleted = await teammateService.removeRequest(selectedProjectId, session.userId!);
+            if (deleted.count === 0) {
+                return `⚠️ *Could not remove this post*\n\nIt may already be removed or you no longer have permission.`;
+            }
+            await sessionManager.patch(session.phoneNumber, { state: 'MAIN_MENU' });
+            return MessageBuilder.mainMenu(`🗑 *Post Removed Successfully*\n\nYour project and related applications were removed.`);
         }
 
         return session.tempData?.isMyPosts ? this.showMyTeammatePosts(session) : this.browseTeammateRequests(session);
     }
 
     private async showMyTeammatePosts(session: BotSession): Promise<any> {
-        const all = await teammateService.getActiveRequests();
-        const myPosts = all.filter(r => r.creatorId === session.userId);
+        const myPosts = await teammateService.getActiveRequests(session.userId);
 
         await sessionManager.patch(session.phoneNumber, {
             state: 'TEAMMATE_BROWSE_PICK',
